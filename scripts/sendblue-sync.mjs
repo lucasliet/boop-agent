@@ -61,10 +61,13 @@ function parsePhones(output) {
     /* not JSON */
   }
 
-  for (const m of clean.matchAll(/\+\d{10,15}/g)) {
-    if (!seen.has(m[0])) {
-      seen.add(m[0]);
-      numbers.push(m[0]);
+  // The sendblue CLI formats as "+1 (469) 555-1234" — match the whole chunk,
+  // then strip non-digits to get back to E.164.
+  for (const m of clean.matchAll(/\+[\d\s()\-.]{10,25}/g)) {
+    const e164 = "+" + m[0].replace(/\D/g, "");
+    if (/^\+\d{10,15}$/.test(e164) && !seen.has(e164)) {
+      seen.add(e164);
+      numbers.push(e164);
     }
   }
   return numbers;
