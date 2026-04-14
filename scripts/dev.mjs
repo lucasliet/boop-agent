@@ -102,6 +102,10 @@ async function waitForNgrokUrl(timeoutMs = 15000) {
 function showBanner(url) {
   const line = "═".repeat(64);
   const webhook = `${url}/sendblue/webhook`;
+  const from = envVars.SENDBLUE_FROM_NUMBER;
+  const fromLine = from
+    ? `  Your Sendblue number:        ${from}  ← text this from another phone`
+    : `  ⚠ SENDBLUE_FROM_NUMBER is not set — outbound sends will fail.`;
 
   console.log(`
 ${C.banner}${line}
@@ -109,11 +113,10 @@ ${C.banner}${line}
 
   Public URL:                  ${url}
   Sendblue webhook (inbound):  ${webhook}
+${fromLine}
 
   → Sendblue dashboard → API Settings → Webhook Configuration
     Add as INBOUND MESSAGE webhook. Paste the URL above.
-
-  Then text your Sendblue-provisioned number from a different phone.
 ${line}${C.reset}
 `);
 }

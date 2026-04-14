@@ -47,6 +47,15 @@ export async function spawnExecutionAgent(opts: SpawnOptions): Promise<SpawnResu
   const abort = new AbortController();
   running.set(agentId, abort);
 
+  const shortId = agentId.slice(-6);
+  const logAgent = (msg: string) => console.log(`[agent ${shortId}] ${msg}`);
+  const taskPreview =
+    opts.task.length > 120 ? opts.task.slice(0, 120) + "…" : opts.task;
+  logAgent(
+    `spawn: ${name} [${opts.integrations.join(", ") || "no integrations"}] — ${JSON.stringify(taskPreview)}`,
+  );
+  const agentStart = Date.now();
+
   await convex.mutation(api.agents.create, {
     agentId,
     conversationId: opts.conversationId,
@@ -99,6 +108,8 @@ export async function spawnExecutionAgent(opts: SpawnOptions): Promise<SpawnResu
               content: block.text,
             });
           } else if (block.type === "tool_use") {
+            const toolShort = block.name.replace(/^mcp__[a-z-]+__/, "");
+            logAgent(`tool: ${toolShort}`);
             await convex.mutation(api.agents.addLog, {
               agentId,
               logType: "tool_use",
@@ -139,6 +150,11 @@ export async function spawnExecutionAgent(opts: SpawnOptions): Promise<SpawnResu
   } finally {
     running.delete(agentId);
   }
+
+  const elapsed = ((Date.now() - agentStart) / 1000).toFixed(1);
+  logAgent(
+    `done (${status}, ${elapsed}s, in/out tokens ${inputTokens}/${outputTokens})`,
+  );
 
   await convex.mutation(api.agents.update, {
     agentId,

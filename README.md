@@ -108,6 +108,8 @@ Then wire it up in Sendblue (one-time):
 
 Text your Sendblue-provisioned number from a **different** phone. The agent replies.
 
+> **Gotcha:** `SENDBLUE_FROM_NUMBER` must be your Sendblue-provisioned number (the one people text TO), not your personal cell. Sendblue's API requires it, and misconfiguring it returns either "missing required parameter: from_number" or "Cannot send messages to self".
+
 Visit `http://localhost:5173` for the debug dashboard (chat, agents, memory, events). You can also chat from the dashboard's Chat tab without Sendblue.
 
 **This is the full first-run.** You now have a working agent that chats, remembers, and schedules reminders. Enable integrations (Gmail, Calendar, Notion, Slack) when you want more — see the next section.
@@ -168,6 +170,7 @@ Everything lives in `.env.local` (auto-created by `npm run setup`). See `.env.ex
 |---|---|---|
 | `CONVEX_URL` / `VITE_CONVEX_URL` | yes | Convex deployment URL. Written by `npx convex dev`. |
 | `SENDBLUE_API_KEY` / `SENDBLUE_API_SECRET` | yes | From your Sendblue dashboard. |
+| `SENDBLUE_FROM_NUMBER` | yes | Your Sendblue-provisioned number. |
 | `BOOP_MODEL` | no | Default `claude-sonnet-4-6`. |
 | `PORT` | no | Default `3456`. |
 | `PUBLIC_URL` | no | Needed for OAuth callbacks and Sendblue webhook URL. |

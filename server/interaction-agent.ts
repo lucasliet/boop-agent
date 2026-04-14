@@ -47,6 +47,7 @@ Format: Plain iMessage-friendly text. Markdown sparingly. Keep replies under ~40
 interface HandleOpts {
   conversationId: string;
   content: string;
+  turnTag?: string;
   onThinking?: (chunk: string) => void;
 }
 
@@ -124,6 +125,9 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
     ? `Prior turns:\n${historyBlock}\n\nCurrent message:\n${opts.content}`
     : opts.content;
 
+  const tag = opts.turnTag ?? turnId.slice(-6);
+  const log = (msg: string) => console.log(`[turn ${tag}] ${msg}`);
+
   let reply = "";
   try {
     for await (const msg of query({
@@ -157,12 +161,18 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
           if (block.type === "text") {
             reply += block.text;
             opts.onThinking?.(block.text);
+          } else if (block.type === "tool_use") {
+            const name = block.name.replace(/^mcp__boop-[a-z-]+__/, "");
+            const inputPreview = JSON.stringify(block.input);
+            log(
+              `tool: ${name}(${inputPreview.length > 90 ? inputPreview.slice(0, 90) + "…" : inputPreview})`,
+            );
           }
         }
       }
     }
   } catch (err) {
-    console.error("[interaction] query failed", err);
+    console.error(`[turn ${tag}] query failed`, err);
     reply = "Sorry — I hit an error processing that. Try again in a moment.";
   }
 
