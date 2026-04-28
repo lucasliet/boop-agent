@@ -397,7 +397,7 @@ Everything lives in `.env.local` (auto-created by `npm run setup`). See `.env.ex
 | `TELEGRAM_WEBHOOK_SECRET` | recommended | Random string — validates that webhook calls are from Telegram. |
 | `TELEGRAM_ADMIN_USER_IDS` | recommended | Pipe-separated Telegram user IDs allowed to use the bot. Empty = public. |
 | `TELEGRAM_AUTO_WEBHOOK` | no | Set to `false` to disable auto-registration on `npm run dev`. Default: on. |
-| `BOOP_MODEL` | no | Default `claude-sonnet-4-6`. |
+| `BOOP_MODEL` | no | Default `claude-sonnet-4-6`. Used as the fallback when no runtime override is set. The user can switch the model at runtime via the `set_model` self-tool — that override is stored in the Convex `settings` table and takes precedence over this env var. |
 | `BOOP_UPSTREAM_CHECK` | no | Set to `false` to disable the new-version banner on `npm run dev`. Default: on. |
 | `PORT` | no | Default `3456`. |
 | `NGROK_DOMAIN` | no | Reserved ngrok domain (paid). When set, `npm run dev` uses it and skips auto-register. |
