@@ -1,0 +1,52 @@
+services:
+  server:
+    build: .
+    container_name: boop-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3456}:3456"
+    env_file:
+      - .env.local
+    environment:
+      PORT: 3456
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: boop-ngrok
+    restart: unless-stopped
+    command:
+      - http
+      - server:3456
+      - --log=stdout
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - server
+    profiles:
+      - tunnel
+
+  webhook:
+    image: node:20-alpine
+    container_name: boop-webhook
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./.env.local:/app/.env.local:ro
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl jq >/dev/null 2>&1
+        echo "[webhook-init] waiting for ngrok…"
+        until URL=$$(curl -sf http://ngrok:4040/api/tunnels | jq -r '.tunnels[]|select(.proto=="https")|.public_url' | head -1) && [ -n "$$URL" ]; do
+          sleep 1
+        done
+        echo "[webhook-init] ngrok URL: $$URL"
+        node scripts/telegram-webhook.mjs "$$URL/telegram/webhook"
+    depends_on:
+      - ngrok
+    profiles:
+      - tunnel
+    restart: "no"

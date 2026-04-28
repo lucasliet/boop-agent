@@ -7,8 +7,7 @@
   "type": "module",
   "scripts": {
     "setup": "tsx scripts/setup.ts",
-    "sendblue:sync": "node scripts/sendblue-sync.mjs",
-    "sendblue:webhook": "node scripts/sendblue-webhook.mjs",
+    "telegram:webhook": "node scripts/telegram-webhook.mjs",
     "preflight": "node scripts/preflight.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:parallel": "npm-run-all --parallel dev:server dev:convex dev:debug",
@@ -32,6 +31,7 @@
     "croner": "^9.0.0",
     "dotenv": "^16.4.0",
     "express": "^5.0.0",
+    "grammy": "^1.42.0",
     "react-force-graph-2d": "^1.27.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"

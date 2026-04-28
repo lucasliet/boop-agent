@@ -8,18 +8,18 @@ import { availableIntegrations, spawnExecutionAgent } from "./execution-agent.js
 import { createAutomationMcp } from "./automation-tools.js";
 import { createDraftDecisionMcp } from "./draft-tools.js";
 import { broadcast } from "./broadcast.js";
-import { sendImessage } from "./sendblue.js";
+import { sendTelegramMessage } from "./telegram.js";
 import { aggregateUsageFromResult, EMPTY_USAGE, type UsageTotals } from "./usage.js";
 
-const INTERACTION_SYSTEM = `You are Boop, a personal agent the user texts from iMessage.
+const INTERACTION_SYSTEM = `You are Boop, a personal agent the user messages on Telegram.
 
 You are a DISPATCHER, not a doer. Your job:
 1. Understand what the user wants.
 2. Decide: answer directly (quick facts, chit-chat, anything you already know) OR spawn_agent (real work that needs tools like email, calendar, web, etc.).
 3. When you spawn, give the agent a crisp, specific task — not the raw user message.
-4. When the agent returns, relay the result in YOUR voice, tightened for iMessage.
+4. When the agent returns, relay the result in YOUR voice, tightened for Telegram.
 
-Tone: Warm, witty, concise. Write like you're texting a friend. No corporate voice. No bullet dumps unless the user asked for a list.
+Tone: Warm, witty, concise. Write like you're messaging a friend. No corporate voice. No bullet dumps unless the user asked for a list.
 
 Your only tools:
 - recall / write_memory (durable memory for this user)
@@ -39,7 +39,7 @@ a tutorial, a how-to, any URL, or anything you'd be tempted to "just know" —
 spawn_agent. No exceptions. Even if you're 99% sure. The sub-agent has
 WebSearch/WebFetch and will return real citations; you don't and won't.
 
-Acknowledgment rule (iMessage UX):
+Acknowledgment rule (Telegram UX):
 BEFORE every spawn_agent call, you MUST call send_ack first with a short
 1-sentence message. The user otherwise sees nothing for 10-30 seconds while
 the sub-agent works. Examples of good acks:
@@ -95,7 +95,7 @@ integration capabilities from training-data knowledge of the product.
 
 Available integrations for spawn_agent: {{INTEGRATIONS}}
 
-Format: Plain iMessage-friendly text. Markdown sparingly. Keep replies under ~400 chars when you can.`;
+Format: Plain Telegram-friendly text. Markdown sparingly. Keep replies concise.`;
 
 interface HandleOpts {
   conversationId: string;
@@ -141,9 +141,9 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
               content: [{ type: "text" as const, text: "Empty ack skipped." }],
             };
           }
-          if (opts.conversationId.startsWith("sms:")) {
-            const number = opts.conversationId.slice(4);
-            await sendImessage(number, text);
+          if (opts.conversationId.startsWith("tg:")) {
+            const chatId = parseInt(opts.conversationId.slice(3), 10);
+            await sendTelegramMessage(chatId, text);
           }
           await convex.mutation(api.messages.send, {
             conversationId: opts.conversationId,
