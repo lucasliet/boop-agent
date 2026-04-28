@@ -24,8 +24,6 @@ services:
       - "4040:4040"
     depends_on:
       - server
-    profiles:
-      - tunnel
 
   webhook:
     image: node:20-alpine
@@ -47,6 +45,4 @@ services:
         node scripts/telegram-webhook.mjs "$$URL/telegram/webhook"
     depends_on:
       - ngrok
-    profiles:
-      - tunnel
     restart: "no"
