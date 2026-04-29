@@ -136,6 +136,25 @@ export const updateRun = mutation({
   },
 });
 
+export const purgeRunsOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("automationRuns")
+      .filter((q) => q.lt(q.field("startedAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      if (!["completed", "failed"].includes(r.status)) continue;
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});
+
 export const recentRuns = query({
   args: { automationId: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {

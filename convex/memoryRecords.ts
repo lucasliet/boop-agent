@@ -180,6 +180,31 @@ export const setLifecycle = mutation({
   },
 });
 
+export const purgeInactiveOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const archived = await ctx.db
+      .query("memoryRecords")
+      .withIndex("by_lifecycle", (q) => q.eq("lifecycle", "archived"))
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    const pruned = await ctx.db
+      .query("memoryRecords")
+      .withIndex("by_lifecycle", (q) => q.eq("lifecycle", "pruned"))
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of [...archived, ...pruned]) {
+      if (r.tier === "permanent") continue;
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: archived.length + pruned.length };
+  },
+});
+
 const COUNTS_SCAN_LIMIT = 5000;
 
 export const countsByTier = query({

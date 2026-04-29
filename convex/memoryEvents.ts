@@ -31,3 +31,21 @@ export const byConversation = query({
       .take(args.limit ?? 50);
   },
 });
+
+export const purgeOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("memoryEvents")
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});

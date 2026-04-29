@@ -467,6 +467,36 @@ Deeper dive: [INTEGRATIONS.md](./INTEGRATIONS.md).
 
 ---
 
+## Data retention
+
+Boop stores everything in Convex. Without any cleanup, all append-only tables grow forever. A daily Convex cron (`convex/crons.ts`, runs at 06:00 UTC) hard-deletes rows past their TTL.
+
+**The cron is independent of the boop-agent server process** — it runs in Convex's own infrastructure even when your server is offline.
+
+| Table | TTL | Notes |
+|-------|-----|-------|
+| `memoryRecords` (archived/pruned) | 30 days | Active and `tier: permanent` are never deleted |
+| `messages` | 90 days | The dispatcher only reads the last 10 messages per turn |
+| `agentLogs` | 14 days | Verbose per-tool-call trace |
+| `memoryEvents` | 14 days | Internal audit trail |
+| `executionAgents` (completed/failed/cancelled) | 30 days | Running agents are never deleted |
+| `automationRuns` (completed/failed) | 30 days | |
+| `articles` (posted) | 30 days | Active drafts are never deleted |
+| `consolidationRuns` (completed/failed) | 30 days | |
+| `drafts` (sent/rejected/expired) | 7 days | Pending drafts are never deleted |
+| `sendblueDedup` | 7 days | Dedup cache |
+| `usageRecords` | 180 days | Billing history |
+
+**What is never deleted:** `conversations`, `automations` (definitions), `settings`, active `memoryRecords`, pending `drafts`.
+
+To trigger a purge run manually via the Convex dashboard or CLI:
+
+```bash
+npx convex run internal/purge:run
+```
+
+---
+
 ## Project layout
 
 ```

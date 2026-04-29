@@ -55,6 +55,25 @@ export const recent = query({
   },
 });
 
+export const purgeOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("drafts")
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      if (!["sent", "rejected", "expired"].includes(r.status)) continue;
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});
+
 export const setStatus = mutation({
   args: { draftId: v.string(), status: statusV },
   handler: async (ctx, args) => {

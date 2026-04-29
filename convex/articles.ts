@@ -60,6 +60,25 @@ export const get = query({
   },
 });
 
+export const purgeOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("articles")
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      if (r.status !== "posted") continue;
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});
+
 export const listByConversation = query({
   args: { conversationId: v.string() },
   handler: async (ctx, args) => {

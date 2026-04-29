@@ -28,3 +28,16 @@ Process:
 2. Prefer not committing ad-hoc debug scripts at all — keep them in your shell history or a gitignored scratch dir.
 3. If you realize PII slipped in **before pushing**, amend or reset and re-commit cleanly.
 4. If it already pushed, see the recovery steps in [GitHub's sensitive data docs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) and rotate any exposed credentials.
+
+## Data retention
+
+A daily Convex cron (`convex/crons.ts`, 06:00 UTC) hard-deletes rows past their TTL. It runs in Convex's infrastructure independently of the boop-agent server process.
+
+**Key rules:**
+- `memoryRecords` with `lifecycle: active` or `tier: permanent` are **never** deleted — only `archived`/`pruned` rows older than 30 days are removed.
+- Pending `drafts` and `running` agents are **never** deleted.
+- The purge action is `internal.purge.run` in `convex/purge.ts`. Each table has a dedicated `purgeOlderThan` (or similar) mutation in its own Convex file.
+
+**When adding a new append-only table**, add a `purgeOlderThan` mutation to its Convex file and register it in the `TARGETS` array in `convex/purge.ts` with an appropriate TTL.
+
+TTL reference: messages 90d, agentLogs/memoryEvents 14d, executionAgents/automationRuns/articles/consolidationRuns/memoryRecords(inactive) 30d, drafts/sendblueDedup 7d, usageRecords 180d.

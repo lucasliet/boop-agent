@@ -108,3 +108,40 @@ export const getLogs = query({
       .take(args.limit ?? 500);
   },
 });
+
+export const purgeAgentsOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("executionAgents")
+      .filter((q) => q.lt(q.field("startedAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      if (!["completed", "failed", "cancelled"].includes(r.status)) continue;
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});
+
+export const purgeLogsOlderThan = mutation({
+  args: { olderThanMs: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs;
+    const limit = args.limit ?? 500;
+    const rows = await ctx.db
+      .query("agentLogs")
+      .filter((q) => q.lt(q.field("createdAt"), cutoff))
+      .take(limit);
+    let deleted = 0;
+    for (const r of rows) {
+      await ctx.db.delete(r._id);
+      deleted++;
+    }
+    return { deleted, scanned: rows.length };
+  },
+});
