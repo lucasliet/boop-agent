@@ -203,7 +203,86 @@ ${draftOutput}`;
 }
 
 /**
- * Creates the boop-article MCP server exposing start_article_pipeline to the dispatcher.
+ * Revises an existing LinkedIn draft with targeted instructions, running only
+ * the editor + QA stage. Rejects the old draft and saves a new one.
+ */
+export async function reviseArticleDraft(opts: {
+  draftId: string;
+  instructions: string;
+  conversationId: string;
+  onProgress?: (stage: string, message: string) => void;
+}): Promise<{ draftId: string; articleText: string }> {
+  const draft = await convex.query(api.drafts.get, { draftId: opts.draftId });
+  if (!draft || draft.status !== "pending") {
+    throw new Error(`Draft ${opts.draftId} not found or already decided.`);
+  }
+
+  const { text: currentText } = JSON.parse(draft.payload) as { text: string };
+
+  opts.onProgress?.("editor", "Revisando o post com as suas instruções...");
+
+  const editorTask = `You are the editor agent for a LinkedIn article pipeline.
+IMPORTANT: All output must be written in English (en-US), regardless of the language of the input.
+${skillBlock("AUTHOR PERSONA", SKILL_AUTHOR_PERSONA)}
+${skillBlock("STYLE GUIDE", SKILL_STYLE_GUIDE)}
+${skillBlock("AVOID AI WRITING", SKILL_AVOID_AI_WRITING)}
+
+QA CHECKLIST (apply all items before returning):
+${LINKEDIN_QA_CHECKLIST}
+
+REVISION INSTRUCTIONS (apply these changes to the post):
+${opts.instructions}
+
+MISSION: Apply the revision instructions above to the post, then QA the result against the checklist.
+- Preserve the author's intent and technical meaning.
+- Do NOT add unverifiable claims.
+- CRITICAL: Remove ALL em dashes (— and --) from the text. Replace with commas, periods, or rewrite as two sentences.
+- Return ONLY the final post text, followed by "---" and a brief change log.
+
+CURRENT POST:
+${currentText}`;
+
+  const editorResult = await spawnExecutionAgent({
+    task: editorTask,
+    integrations: [],
+    conversationId: opts.conversationId,
+    name: "article:editor",
+  });
+
+  const articleText = editorResult.result.split("---")[0].trim();
+
+  await convex.mutation(api.drafts.setStatus, {
+    draftId: opts.draftId,
+    status: "rejected",
+  });
+
+  const newDraftId = randomId("draft");
+  await convex.mutation(api.drafts.create, {
+    draftId: newDraftId,
+    conversationId: opts.conversationId,
+    kind: "linkedin.post",
+    summary: `LinkedIn post: ${articleText.slice(0, 80)}…`,
+    payload: JSON.stringify({ text: articleText }),
+  });
+
+  const article = await convex.query(api.articles.listByConversation, {
+    conversationId: opts.conversationId,
+  });
+  const latest = article.find((a) => a.draftId === opts.draftId);
+  if (latest) {
+    await convex.mutation(api.articles.update, {
+      articleId: latest.articleId,
+      editorOutput: editorResult.result,
+      draftId: newDraftId,
+    });
+  }
+
+  return { draftId: newDraftId, articleText };
+}
+
+/**
+ * Creates the boop-article MCP server exposing start_article_pipeline and
+ * revise_article_draft to the dispatcher.
  */
 export function createArticlePipelineMcp(
   conversationId: string,
@@ -215,9 +294,10 @@ export function createArticlePipelineMcp(
     tools: [
       tool(
         "start_article_pipeline",
-        `Run the full LinkedIn article pipeline (researcher → briefer → writer → editor).
+        `Run the full LinkedIn article pipeline (researcher → briefer → writer → editor + QA).
 Returns a draftId and the final article text after all stages complete. The user must approve via send_draft.
-Use for: "write a LinkedIn post about X", "create an article from this research", "draft a post".`,
+Use for: "write a LinkedIn post about X", "create an article from this research", "draft a post".
+Do NOT use for adjustments to an existing draft — use revise_article_draft instead.`,
         {
           input: z
             .string()
@@ -240,6 +320,36 @@ Use for: "write a LinkedIn post about X", "create an article from this research"
               {
                 type: "text" as const,
                 text: `Pipeline complete. Draft ID: ${draftId}\n\n${articleText}`,
+              },
+            ],
+          };
+        },
+      ),
+
+      tool(
+        "revise_article_draft",
+        `Apply targeted revisions to an existing pending LinkedIn draft, then re-run QA.
+Rejects the old draft and returns a new draftId with the revised text.
+Use for: "make the hook punchier", "shorten the CTA", "adjust the tone", any tweak to a post already drafted.
+Do NOT use for a completely new topic — use start_article_pipeline instead.`,
+        {
+          draftId: z.string().describe("The pending draft ID to revise."),
+          instructions: z
+            .string()
+            .describe("Specific changes to apply, e.g. 'make the hook more direct and cut the last bullet'."),
+        },
+        async (args) => {
+          const { draftId, articleText } = await reviseArticleDraft({
+            draftId: args.draftId,
+            instructions: args.instructions,
+            conversationId,
+            onProgress,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Revision complete. New draft ID: ${draftId}\n\n${articleText}`,
               },
             ],
           };
