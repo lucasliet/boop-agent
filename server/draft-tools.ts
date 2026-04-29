@@ -70,7 +70,9 @@ ${text.trim()}
 Steps:
 1. Use LINKEDIN_CREATE_TEXT_POST or equivalent tool with the text above.
 2. Do not modify the text or add hashtags unless already present.
-3. Return confirmation including the post URL if available.`;
+3. After posting, return the full post URL in this exact format:
+https://www.linkedin.com/feed/update/{urn}/
+where {urn} is the post ID returned by the tool (e.g. urn:li:share:1234567890).`;
 }
 
 /**
@@ -136,11 +138,15 @@ payload JSON: ${draft.payload}`;
             conversationId,
             name: `send:${draft.kind}`,
           });
+          const resultText = res.result.replace(
+            /(?<!update\/)(urn:li:(?:share|activity):\d+)/g,
+            "https://www.linkedin.com/feed/update/$1/",
+          );
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Draft ${args.draftId} executed.\n\n${res.result}`,
+                text: `Draft ${args.draftId} executed.\n\n${resultText}`,
               },
             ],
           };
