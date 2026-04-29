@@ -3,6 +3,7 @@ import { z } from "zod";
 import { api } from "../convex/_generated/api.js";
 import { convex } from "./convex-client.js";
 import { spawnExecutionAgent } from "./execution-agent.js";
+import { consumePendingImage } from "./pending-images.js";
 
 function randomId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -53,13 +54,36 @@ ALWAYS call this instead of sending or creating something directly. The user wil
   });
 }
 
-function buildLinkedInPostTask(draft: { payload: string; summary: string }): string {
+function buildLinkedInPostTask(draft: { payload: string; summary: string }, imageUrl?: string): string {
   const { text } = JSON.parse(draft.payload) as { text: string };
   if (!text || text.trim().length < 80) {
     throw new Error(
       `linkedin.post draft payload has no valid text (got ${text?.length ?? 0} chars). Reject this draft and re-run the pipeline.`,
     );
   }
+
+  const confirmationInstruction = `After posting, return the full post URL in this format:
+https://www.linkedin.com/feed/update/{urn}/
+where {urn} is the post ID returned by the tool (e.g. urn:li:share:1234567890).`;
+
+  if (imageUrl) {
+    return `Post this article to LinkedIn with an image using the LinkedIn toolkit.
+
+The full post text and image URL are below. Post exactly as written — do not paraphrase, summarize, or ask for clarification.
+
+POST TEXT:
+${text.trim()}
+
+IMAGE URL:
+${imageUrl}
+
+Steps:
+1. Use the LinkedIn toolkit to create a post with media. Upload the image from the URL above (use the image upload tool if available, or pass the URL directly).
+2. Attach the post text to the media post.
+3. Do not modify the text or add hashtags unless already present.
+4. ${confirmationInstruction}`;
+  }
+
   return `Post this article to LinkedIn using the LinkedIn toolkit.
 
 The full post text is below. Post it exactly as written — do not paraphrase, summarize, or ask for clarification.
@@ -70,7 +94,7 @@ ${text.trim()}
 Steps:
 1. Use LINKEDIN_CREATE_TEXT_POST or equivalent tool with the text above.
 2. Do not modify the text or add hashtags unless already present.
-3. Return confirmation including the post URL if available.`;
+3. ${confirmationInstruction}`;
 }
 
 /**
@@ -119,9 +143,11 @@ export function createDraftDecisionMcp(conversationId: string) {
             draftId: args.draftId,
             status: "sent",
           });
+          const pendingImageUrl =
+            draft.kind === "linkedin.post" ? consumePendingImage(conversationId) : undefined;
           const task =
             draft.kind === "linkedin.post"
-              ? buildLinkedInPostTask(draft)
+              ? buildLinkedInPostTask(draft, pendingImageUrl)
               : `Execute this approved draft. Use the matching integration tool to actually send/create it.
 kind: ${draft.kind}
 summary: ${draft.summary}

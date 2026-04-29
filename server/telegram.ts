@@ -4,6 +4,15 @@ import { api } from "../convex/_generated/api.js";
 import { convex } from "./convex-client.js";
 import { handleUserMessage } from "./interaction-agent.js";
 import { broadcast } from "./broadcast.js";
+import { setPendingImage } from "./pending-images.js";
+
+async function getTelegramFileUrl(bot: Bot, photoSizes: { file_id: string }[]): Promise<string | undefined> {
+  const largest = photoSizes[photoSizes.length - 1];
+  const file = await bot.api.getFile(largest.file_id);
+  if (!file.file_path) return undefined;
+  const token = process.env.BOT_TOKEN!;
+  return `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+}
 
 const MAX_CHUNK = 4096;
 
@@ -99,7 +108,9 @@ export function createTelegramRouter(): express.Router {
 
     const update = req.body;
     const message = update?.message;
-    if (!message?.text || !message?.from?.id) {
+    const hasText = !!message?.text;
+    const hasPhoto = Array.isArray(message?.photo) && message.photo.length > 0;
+    if ((!hasText && !hasPhoto) || !message?.from?.id) {
       res.json({ ok: true, skipped: true });
       return;
     }
@@ -118,8 +129,16 @@ export function createTelegramRouter(): express.Router {
 
     const chatId: number = message.chat.id;
     const userId: number = message.from.id;
-    const content: string = message.text;
     const conversationId = `tg:${userId}`;
+    const content: string = message.caption ?? message.text ?? "";
+
+    if (hasPhoto) {
+      const bot = getBot();
+      if (bot) {
+        const imageUrl = await getTelegramFileUrl(bot, message.photo).catch(() => undefined);
+        if (imageUrl) setPendingImage(conversationId, imageUrl);
+      }
+    }
     const turnTag = Math.random().toString(36).slice(2, 8);
     const preview = content.length > 100 ? content.slice(0, 100) + "…" : content;
     console.log(`[turn ${turnTag}] ← ${userId}: ${JSON.stringify(preview)}`);
