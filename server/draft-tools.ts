@@ -53,6 +53,18 @@ ALWAYS call this instead of sending or creating something directly. The user wil
   });
 }
 
+function buildLinkedInPostTask(draft: { payload: string; summary: string }): string {
+  const { text } = JSON.parse(draft.payload) as { text: string };
+  return `Post this article to LinkedIn using the LinkedIn toolkit.
+
+POST TEXT (post exactly as written — do not paraphrase or edit):
+${text}
+
+Use LINKEDIN_CREATE_TEXT_POST or equivalent tool.
+Do not modify the text or add hashtags unless already present.
+Return confirmation including the post URL if available.`;
+}
+
 /**
  * Drafts MCP for the INTERACTION agent. Lets it review and approve drafts the user confirmed.
  */
@@ -99,13 +111,20 @@ export function createDraftDecisionMcp(conversationId: string) {
             draftId: args.draftId,
             status: "sent",
           });
-          const task = `Execute this approved draft. Use the matching integration tool to actually send/create it.
+          const task =
+            draft.kind === "linkedin.post"
+              ? buildLinkedInPostTask(draft)
+              : `Execute this approved draft. Use the matching integration tool to actually send/create it.
 kind: ${draft.kind}
 summary: ${draft.summary}
 payload JSON: ${draft.payload}`;
+          const effectiveIntegrations =
+            draft.kind === "linkedin.post"
+              ? ["linkedin", ...args.integrations]
+              : args.integrations;
           const res = await spawnExecutionAgent({
             task,
-            integrations: args.integrations,
+            integrations: effectiveIntegrations,
             conversationId,
             name: `send:${draft.kind}`,
           });

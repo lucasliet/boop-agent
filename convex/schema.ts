@@ -213,6 +213,30 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
+  articles: defineTable({
+    articleId: v.string(),
+    conversationId: v.string(),
+    topic: v.string(),
+    inputType: v.union(v.literal("topic"), v.literal("research")),
+    status: v.union(
+      v.literal("researching"),
+      v.literal("briefing"),
+      v.literal("writing"),
+      v.literal("editing"),
+      v.literal("draft_ready"),
+      v.literal("posted"),
+    ),
+    researchOutput: v.optional(v.string()),
+    briefOutput: v.optional(v.string()),
+    draftOutput: v.optional(v.string()),
+    editorOutput: v.optional(v.string()),
+    draftId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_article_id", ["articleId"])
+    .index("by_conversation", ["conversationId"]),
+
   automationRuns: defineTable({
     runId: v.string(),
     automationId: v.string(),

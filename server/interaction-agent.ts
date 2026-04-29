@@ -8,6 +8,7 @@ import { availableIntegrations, spawnExecutionAgent } from "./execution-agent.js
 import { createAutomationMcp } from "./automation-tools.js";
 import { createDraftDecisionMcp } from "./draft-tools.js";
 import { createSelfMcp } from "./self-tools.js";
+import { createArticlePipelineMcp } from "./article-pipeline.js";
 import { getRuntimeModel } from "./runtime-config.js";
 import { broadcast } from "./broadcast.js";
 import { sendTelegramMessage } from "./telegram.js";
@@ -108,6 +109,14 @@ no ack required.
 
 Available integrations for spawn_agent: {{INTEGRATIONS}}
 
+LinkedIn Article Pipeline:
+- When the user asks to write a LinkedIn post, article, or wants to turn research into a post, call start_article_pipeline INSTEAD of spawn_agent.
+- Send ack FIRST: "On it — pipeline de escrita em 4 etapas, uns 2 minutinhos ✍️"
+- inputType: "topic" for a subject or angle; "research" when the user pastes notes, URLs, or raw content.
+- After the pipeline returns, show the article text and ask: "Pronto pra postar no LinkedIn? Diz 'posta' ou me diz o que mudar."
+- When the user approves: call list_drafts then send_draft with the draftId — the linkedin integration is handled automatically.
+- When the user wants changes: call reject_draft and re-run start_article_pipeline with the revised input.
+
 Format: Plain Telegram-friendly text. Markdown sparingly. Keep replies concise.`;
 
 interface HandleOpts {
@@ -177,6 +186,17 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
       ),
     ],
   });
+
+  const articleServer = createArticlePipelineMcp(
+    opts.conversationId,
+    (stage, msg) => {
+      if (opts.conversationId.startsWith("tg:")) {
+        const chatId = parseInt(opts.conversationId.slice(3), 10);
+        sendTelegramMessage(chatId, msg).catch(() => {});
+      }
+      log(`[article:${stage}] ${msg}`);
+    },
+  );
 
   const spawnServer = createSdkMcpServer({
     name: "boop-spawn",
@@ -252,6 +272,7 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
           "boop-draft-decisions": draftDecisionServer,
           "boop-ack": ackServer,
           "boop-self": selfServer,
+          "boop-article": articleServer,
         },
         allowedTools: [
           "mcp__boop-memory__write_memory",
@@ -270,6 +291,7 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
           "mcp__boop-self__list_integrations",
           "mcp__boop-self__search_composio_catalog",
           "mcp__boop-self__inspect_toolkit",
+          "mcp__boop-article__start_article_pipeline",
         ],
         // Belt-and-suspenders: even with bypassPermissions the SDK can leak
         // its built-ins if we only whitelist. Explicitly block them on the
