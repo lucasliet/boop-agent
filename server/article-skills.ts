@@ -186,6 +186,10 @@ export const SKILL_AVOID_AI_WRITING = `
 You are editing content to remove AI writing patterns ("AI-isms") that make text sound machine-generated.
 Use rewrite mode: flag AI-isms and rewrite the text to fix them.
 
+## Non-negotiable rules (apply before anything else)
+- Em dashes (— and --): ALWAYS remove. Replace with a comma, period, or rewrite as two sentences. Zero tolerance.
+- Bold overuse: strip bold from most phrases. Max one bolded phrase per section.
+
 ## Tier 1 — Always replace
 
 | Replace | With |

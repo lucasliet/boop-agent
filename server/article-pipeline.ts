@@ -54,6 +54,7 @@ export async function runArticlePipeline(
   if (opts.inputType === "research") {
     opts.onProgress?.("researcher", "Pesquisando e sintetizando as notas...");
     const researchTask = `You are the researcher agent for a LinkedIn article pipeline.
+IMPORTANT: All output must be written in English (en-US), regardless of the language of the input.
 ${skillBlock("AUTHOR PERSONA", SKILL_AUTHOR_PERSONA)}
 ${skillBlock("TECHNICAL ACCURACY", SKILL_TECHNICAL_ACCURACY)}
 
@@ -90,6 +91,7 @@ ${opts.input}`;
   }
 
   const briefTask = `You are the briefer agent for a LinkedIn article pipeline.
+IMPORTANT: All output must be written in English (en-US), regardless of the language of the input.
 ${skillBlock("AUTHOR PERSONA", SKILL_AUTHOR_PERSONA)}
 ${skillBlock("LINKEDIN POST FORMAT", SKILL_LINKEDIN_POST)}
 ${skillBlock("TECHNICAL ACCURACY", SKILL_TECHNICAL_ACCURACY)}
@@ -124,6 +126,7 @@ Return the full brief text conforming to the template above.`;
   opts.onProgress?.("writer", "Redigindo o post...");
 
   const writerTask = `You are the writer agent for a LinkedIn article pipeline.
+IMPORTANT: All output must be written in English (en-US), regardless of the language of the input.
 ${skillBlock("AUTHOR PERSONA", SKILL_AUTHOR_PERSONA)}
 ${skillBlock("STYLE GUIDE", SKILL_STYLE_GUIDE)}
 ${skillBlock("LINKEDIN POST FORMAT", SKILL_LINKEDIN_POST)}
@@ -153,6 +156,7 @@ ${briefOutput}`;
   opts.onProgress?.("editor", "Revisando e fazendo QA final...");
 
   const editorTask = `You are the editor agent for a LinkedIn article pipeline.
+IMPORTANT: All output must be written in English (en-US), regardless of the language of the input.
 ${skillBlock("AUTHOR PERSONA", SKILL_AUTHOR_PERSONA)}
 ${skillBlock("STYLE GUIDE", SKILL_STYLE_GUIDE)}
 ${skillBlock("AVOID AI WRITING", SKILL_AVOID_AI_WRITING)}
@@ -163,6 +167,7 @@ ${LINKEDIN_QA_CHECKLIST}
 MISSION: Edit the draft below for clarity, accuracy, and flow. Then QA it against the checklist.
 - Preserve the author's intent and technical meaning.
 - Do NOT add unverifiable claims.
+- CRITICAL: Remove ALL em dashes (— and --) from the text. Replace with commas, periods, or rewrite as two sentences.
 - Return ONLY the final post text, followed by "---" and a brief change log.
 
 DRAFT:
