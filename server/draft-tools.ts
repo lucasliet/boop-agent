@@ -55,14 +55,22 @@ ALWAYS call this instead of sending or creating something directly. The user wil
 
 function buildLinkedInPostTask(draft: { payload: string; summary: string }): string {
   const { text } = JSON.parse(draft.payload) as { text: string };
+  if (!text || text.trim().length < 80) {
+    throw new Error(
+      `linkedin.post draft payload has no valid text (got ${text?.length ?? 0} chars). Reject this draft and re-run the pipeline.`,
+    );
+  }
   return `Post this article to LinkedIn using the LinkedIn toolkit.
 
-POST TEXT (post exactly as written — do not paraphrase or edit):
-${text}
+The full post text is below. Post it exactly as written — do not paraphrase, summarize, or ask for clarification.
 
-Use LINKEDIN_CREATE_TEXT_POST or equivalent tool.
-Do not modify the text or add hashtags unless already present.
-Return confirmation including the post URL if available.`;
+POST TEXT:
+${text.trim()}
+
+Steps:
+1. Use LINKEDIN_CREATE_TEXT_POST or equivalent tool with the text above.
+2. Do not modify the text or add hashtags unless already present.
+3. Return confirmation including the post URL if available.`;
 }
 
 /**

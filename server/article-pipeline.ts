@@ -18,6 +18,26 @@ function randomId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Extracts the article text from the editor agent's output.
+ * Expects the format: "<article text>\n==CHANGELOG==\n<change log>"
+ * Throws if the extracted text looks like a clarification request rather than a post.
+ */
+function extractArticleText(editorOutput: string): string {
+  const separatorIndex = editorOutput.indexOf("==CHANGELOG==");
+  const text = separatorIndex !== -1
+    ? editorOutput.slice(0, separatorIndex).trim()
+    : editorOutput.trim();
+
+  if (text.length < 80) {
+    throw new Error(
+      `Editor returned text too short to be a valid LinkedIn post (${text.length} chars). Raw output: ${editorOutput.slice(0, 200)}`,
+    );
+  }
+
+  return text;
+}
+
 export interface ArticlePipelineOptions {
   input: string;
   inputType: "topic" | "research";
@@ -168,7 +188,8 @@ MISSION: Edit the draft below for clarity, accuracy, and flow. Then QA it agains
 - Preserve the author's intent and technical meaning.
 - Do NOT add unverifiable claims.
 - CRITICAL: Remove ALL em dashes (— and --) from the text. Replace with commas, periods, or rewrite as two sentences.
-- Return ONLY the final post text, followed by "---" and a brief change log.
+- CRITICAL: NEVER ask for clarification or more input. Work with what you have.
+- Return the final post text, then the exact separator line "==CHANGELOG==" on its own line, then a brief change log.
 
 DRAFT:
 ${draftOutput}`;
@@ -181,7 +202,7 @@ ${draftOutput}`;
   });
   const editorOutput = editorResult.result;
 
-  const articleText = editorOutput.split("---")[0].trim();
+  const articleText = extractArticleText(editorOutput);
 
   const draftId = randomId("draft");
   await convex.mutation(api.drafts.create, {
@@ -237,7 +258,8 @@ MISSION: Apply the revision instructions above to the post, then QA the result a
 - Preserve the author's intent and technical meaning.
 - Do NOT add unverifiable claims.
 - CRITICAL: Remove ALL em dashes (— and --) from the text. Replace with commas, periods, or rewrite as two sentences.
-- Return ONLY the final post text, followed by "---" and a brief change log.
+- CRITICAL: NEVER ask for clarification or more input. Work with what you have.
+- Return the final post text, then the exact separator line "==CHANGELOG==" on its own line, then a brief change log.
 
 CURRENT POST:
 ${currentText}`;
@@ -249,7 +271,7 @@ ${currentText}`;
     name: "article:editor",
   });
 
-  const articleText = editorResult.result.split("---")[0].trim();
+  const articleText = extractArticleText(editorResult.result);
 
   await convex.mutation(api.drafts.setStatus, {
     draftId: opts.draftId,
