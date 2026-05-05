@@ -107,8 +107,8 @@ async function main() {
   });
 
   const port = Number(process.env.PORT ?? 3456);
-  server.listen(port, () => {
-    console.log(`boop-agent server listening on :${port}`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`boop-agent server listening on 0.0.0.0:${port}`);
     console.log(`  health      GET  http://localhost:${port}/health`);
     console.log(`  chat        POST http://localhost:${port}/chat`);
     console.log(`  telegram    POST http://localhost:${port}/telegram/webhook`);
