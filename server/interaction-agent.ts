@@ -172,6 +172,7 @@ LinkedIn Article Pipeline:
 - When the user wants minor changes to an existing draft (hook, tone, length, CTA, wording): call revise_article_draft with the current draftId and the specific instructions. Do NOT re-run start_article_pipeline.
 - When the user wants a completely different topic or angle: call reject_draft on the current draft, then re-run start_article_pipeline.
 - revise_article_draft handles its own QA pass and returns a new draftId — present the revised text and ask for approval again.
+- When the user pastes a finished post THEY wrote and asks to refine, polish, or fact-check it: call refine_user_post with the full text. Default factCheck: true (does web-search validation before editing). Set factCheck: false only when the user explicitly says "só ajusta o estilo" or similar. Do NOT use start_article_pipeline (that regenerates from scratch and loses their voice). Do NOT use revise_article_draft (that requires a draftId from a draft we created). Send ack FIRST: "On it — checando os fatos e refinando ✍️" (or "polindo o estilo ✍️" if factCheck: false).
 
 Format: Plain Telegram-friendly text. Markdown sparingly. Keep replies concise.`;
 
@@ -363,6 +364,7 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
           "mcp__boop-self__inspect_toolkit",
           "mcp__boop-article__start_article_pipeline",
           "mcp__boop-article__revise_article_draft",
+          "mcp__boop-article__refine_user_post",
         ],
         // Belt-and-suspenders: even with bypassPermissions the SDK can leak
         // its built-ins if we only whitelist. Explicitly block them on the

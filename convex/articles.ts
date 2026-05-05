@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 const statusV = v.union(
   v.literal("researching"),
+  v.literal("fact_checking"),
   v.literal("briefing"),
   v.literal("writing"),
   v.literal("editing"),
@@ -15,7 +16,11 @@ export const create = mutation({
     articleId: v.string(),
     conversationId: v.string(),
     topic: v.string(),
-    inputType: v.union(v.literal("topic"), v.literal("research")),
+    inputType: v.union(
+      v.literal("topic"),
+      v.literal("research"),
+      v.literal("user_post"),
+    ),
     status: statusV,
   },
   handler: async (ctx, args) => {
