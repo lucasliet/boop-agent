@@ -5,6 +5,7 @@ import { convex } from "./convex-client.js";
 import { handleUserMessage } from "./interaction-agent.js";
 import { maybeHandleScriptedDemoReply } from "./scripted-demo-replies.js";
 import { broadcast } from "./broadcast.js";
+import { TelegramStreamer } from "./telegram-stream.js";
 
 const MAX_CHUNK = 4096;
 
@@ -137,24 +138,41 @@ export function createTelegramRouter(): express.Router {
     }
 
     const stopTyping = startTypingLoop(chatId);
+    const bot = getBot();
+    const streamer = bot ? new TelegramStreamer(bot.api, chatId) : null;
     try {
       const reply = await handleUserMessage({
         conversationId,
         content,
         turnTag,
-        onThinking: (t) => broadcast("thinking", { conversationId, t }),
+        onThinking: (t) => {
+          broadcast("thinking", { conversationId, t });
+          streamer?.append(t);
+        },
       });
       if (reply) {
-        await sendTelegramMessage(chatId, reply);
+        // First chunk lands in the streamed message (if one was created);
+        // overflow goes as follow-ups. No streamed message → plain send.
+        const [first, ...rest] = chunk(stripMarkdown(reply));
+        const rendered = streamer ? await streamer.finalize(first) : false;
+        if (!rendered) {
+          await sendTelegramMessage(chatId, reply);
+        } else {
+          for (const part of rest) {
+            await sendTelegramMessage(chatId, part);
+          }
+        }
         await convex.mutation(api.messages.send, {
           conversationId,
           role: "assistant",
           content: reply,
         });
       } else {
+        await streamer?.finalize("");
         console.log(`[turn ${turnTag}] → (no reply)`);
       }
     } catch (err) {
+      await streamer?.finalize("");
       console.error(`[turn ${turnTag}] handler error`, err);
     } finally {
       stopTyping();
