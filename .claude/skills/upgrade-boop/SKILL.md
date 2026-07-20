@@ -42,6 +42,7 @@ Run `/upgrade-boop` inside the repo from `claude`. This is the supported upgrade
 - Prefer git-native operations. Do not rewrite files manually except to resolve conflict markers.
 - Default to MERGE (one-pass conflict resolution). Offer REBASE only if the user explicitly asks.
 - Keep token usage low: use `git status`, `git log`, `git diff`, and only open files that actually have conflicts.
+- This fork uses **Telegram, not Sendblue/iMessage**, as its messaging channel (see CLAUDE.md). NEVER reintroduce Sendblue/iMessage wiring during an upgrade — drop upstream's sendblue routes, webhooks, env vars, scripts entries, and setup prompts in conflict resolution, and port any underlying improvement to the Telegram path instead. The local Apple-data *reader* for iMessage (`server/apple/`) is unrelated and may be kept.
 
 ---
 

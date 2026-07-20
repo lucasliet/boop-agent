@@ -41,3 +41,12 @@ A daily Convex cron (`convex/crons.ts`, 06:00 UTC) hard-deletes rows past their 
 **When adding a new append-only table**, add a `purgeOlderThan` mutation to its Convex file and register it in the `TARGETS` array in `convex/purge.ts` with an appropriate TTL.
 
 TTL reference: messages 90d, agentLogs/memoryEvents 14d, executionAgents/automationRuns/articles/consolidationRuns/memoryRecords(inactive) 30d, drafts/sendblueDedup 7d, usageRecords 180d.
+
+## Messaging channel: Telegram only (never Sendblue/iMessage)
+
+This fork replaced the Sendblue/iMessage channel with Telegram (grammy) in commit `d4436d2`. This is a permanent decision:
+
+- The user-facing channel is **Telegram** — `server/telegram.ts`, `scripts/telegram-webhook.mjs`, `BOT_TOKEN` / `TELEGRAM_*` env vars.
+- **Never reintroduce Sendblue/iMessage** as a messaging channel — no routes, webhooks, env vars, setup prompts, or docs for it — even when upstream adds improvements to that channel. During upstream merges, drop upstream Sendblue/iMessage wiring and port the underlying improvements to the Telegram path instead.
+- Leftover dead files (`server/sendblue.ts`, `scripts/sendblue-*.mjs`, `test/sendblue-*.test.ts`, the `sendblueDedup` table) exist only as merge residue; remove them when convenient, never revive them.
+- Note: the upstream "Apple data" integration *reading* iMessage texts locally from the Mac (`server/apple/`) is unrelated to the messaging channel and is fine to keep.
