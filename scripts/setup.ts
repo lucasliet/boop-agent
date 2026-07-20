@@ -1,12 +1,58 @@
 #!/usr/bin/env tsx
 import prompts from "prompts";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(new URL(".", import.meta.url).pathname, "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = resolve(ROOT, ".env.local");
 const EXAMPLE_PATH = resolve(ROOT, ".env.example");
+
+type RuntimeChoice = "claude" | "codex";
+
+const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+const DEFAULT_CODEX_MODEL = "gpt-5.5";
+const DEFAULT_CODEX_REASONING_EFFORT = "medium";
+
+interface CommandSpec {
+  cmd: string;
+  leading: string[];
+}
+
+const CLAUDE_MODEL_CHOICES = [
+  { title: "claude-sonnet-4-6 (recommended)", value: "claude-sonnet-4-6" },
+  { title: "claude-opus-4-6 (slowest, most capable)", value: "claude-opus-4-6" },
+  { title: "claude-haiku-4-5 (fastest, cheapest)", value: "claude-haiku-4-5" },
+];
+
+const CODEX_MODEL_CHOICES = [
+  { title: "gpt-5.5 (most capable)", value: "gpt-5.5" },
+  { title: "gpt-5.4-mini (faster local testing)", value: "gpt-5.4-mini" },
+  { title: "gpt-5.4 (balanced)", value: "gpt-5.4" },
+  { title: "gpt-5.3-codex (coding optimized)", value: "gpt-5.3-codex" },
+];
+
+const CODEX_REASONING_CHOICES = [
+  { title: "low (fastest)", value: "low" },
+  { title: "medium (recommended)", value: "medium" },
+  { title: "high (deeper reasoning)", value: "high" },
+  { title: "xhigh (maximum reasoning)", value: "xhigh" },
+];
+
+function runtimeFromEnv(value: string | undefined): RuntimeChoice {
+  return value === "codex" ? "codex" : "claude";
+}
+
+function initialForChoice<T extends readonly { value: string }[]>(
+  choices: T,
+  value: string | undefined,
+  fallback = 0,
+): number {
+  const index = choices.findIndex((choice) => choice.value === value);
+  return index >= 0 ? index : fallback;
+}
 
 function readEnv(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
@@ -60,7 +106,7 @@ function writeEnv(path: string, env: Record<string, string>): void {
 
 function cleanConvexUrlEnv(path: string): void {
   const envContent = readFileSync(path, "utf8");
-  const updated = envContent.replace(/^VITE_CONVEX_URL=.*(\r?\n)?/gm, "");
+  const updated = envContent.replace(/^(?:CONVEX_URL|VITE_CONVEX_URL)=.*(\r?\n)?/gm, "");
   writeFileSync(path, updated);
 }
 
@@ -68,6 +114,118 @@ function banner(s: string) {
   console.log("\n" + "━".repeat(60));
   console.log("  " + s);
   console.log("━".repeat(60));
+}
+
+function executableNames(name: string): string[] {
+  if (process.platform !== "win32") return [name];
+  if (/\.(cmd|exe|bat)$/i.test(name)) return [name];
+  return [`${name}.cmd`, `${name}.exe`, `${name}.bat`, name];
+}
+
+function commandSearchDirs(): string[] {
+  const dirs = [
+    resolve(ROOT, "node_modules", ".bin"),
+    ...((process.env.PATH ?? "").split(delimiter).filter(Boolean)),
+  ];
+  if (process.platform === "darwin") {
+    dirs.push(
+      resolve(homedir(), ".local", "bin"),
+      resolve(homedir(), ".npm-global", "bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
+      "/bin",
+    );
+  }
+  dirs.push(dirname(process.execPath));
+  return [...new Set(dirs)];
+}
+
+function resolveCommand(name: string): string | null {
+  if (name.includes("/") || name.includes("\\")) {
+    return existsSync(name) ? name : null;
+  }
+  for (const dir of commandSearchDirs()) {
+    for (const executable of executableNames(name)) {
+      const candidate = resolve(dir, executable);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function spawnableNodeCommand(): string {
+  const candidates = [
+    ...(process.platform === "darwin" ? ["/opt/homebrew/bin/node", "/usr/local/bin/node"] : []),
+    resolveCommand("node"),
+    "node",
+    process.execPath,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => candidate === "node" || existsSync(candidate)) ?? "node";
+}
+
+function nodeScriptCommand(scriptPath: string, leading: string[]): CommandSpec {
+  const node = spawnableNodeCommand();
+  return { cmd: node, leading: [scriptPath, ...leading] };
+}
+
+function npmExecCommand(packageName: string, binName: string): CommandSpec | null {
+  const npm = resolveCommand("npm");
+  if (npm) {
+    try {
+      const npmCli = realpathSync(npm);
+      if (npmCli.endsWith(".js")) {
+        return nodeScriptCommand(npmCli, [
+          "exec",
+          "--yes",
+          "--package",
+          packageName,
+          "--",
+          binName,
+        ]);
+      }
+    } catch {
+      /* fall through to spawning npm directly */
+    }
+    return {
+      cmd: npm,
+      leading: ["exec", "--yes", "--package", packageName, "--", binName],
+    };
+  }
+
+  const npx = resolveCommand("npx");
+  if (npx) {
+    try {
+      const npxCli = realpathSync(npx);
+      if (npxCli.endsWith(".js")) {
+        return nodeScriptCommand(npxCli, ["-y", packageName]);
+      }
+    } catch {
+      /* fall through to spawning npx directly */
+    }
+    return { cmd: npx, leading: ["-y", packageName] };
+  }
+
+  return null;
+}
+
+function commandEnv(): NodeJS.ProcessEnv {
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  const currentPath = process.env[pathKey] ?? process.env.PATH ?? "";
+  return {
+    ...process.env,
+    [pathKey]: [...commandSearchDirs(), currentPath].filter(Boolean).join(delimiter),
+  };
+}
+
+function packageCommand(binName: string, packageName = binName): CommandSpec {
+  const direct = resolveCommand(binName);
+  if (direct) return { cmd: direct, leading: [] };
+
+  const npmExec = npmExecCommand(packageName, binName);
+  if (npmExec) return npmExec;
+
+  throw new Error(`Could not find ${binName}, npx, or npm on PATH.`);
 }
 
 async function runConvexDev(): Promise<void> {
@@ -80,12 +238,14 @@ async function runConvexDev(): Promise<void> {
     : ["convex", "dev", "--once", "--configure", "new"];
 
   if (!existing.CONVEX_DEPLOYMENT) {
-    // Remove VITE_CONVEX_URL from the env file to allow convex cli to populate it.
+    // Remove old Convex URLs from the env file to allow convex cli to populate
+    // the Vite URL cleanly.
     cleanConvexUrlEnv(ENV_PATH);
   }
 
+  const runner = packageCommand("convex", "convex");
   console.log(
-    `\nLaunching \`npx ${args.join(" ")}\` to configure your deployment.`,
+    `\nLaunching \`${[runner.cmd, ...runner.leading, ...args.slice(1)].join(" ")}\` to configure your deployment.`,
   );
   console.log("Convex will open a browser window if you're not logged in.");
   if (existing.CONVEX_DEPLOYMENT) {
@@ -93,7 +253,11 @@ async function runConvexDev(): Promise<void> {
   }
 
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn("npx", args, { stdio: "inherit", cwd: ROOT });
+    const child = spawn(runner.cmd, [...runner.leading, ...args.slice(1)], {
+      stdio: "inherit",
+      cwd: ROOT,
+      env: commandEnv(),
+    });
     child.on("exit", (code) =>
       code === 0 ? resolvePromise() : reject(new Error(`convex dev exited ${code}`)),
     );
@@ -101,9 +265,10 @@ async function runConvexDev(): Promise<void> {
 }
 
 function hasBinary(name: string): Promise<boolean> {
+  if (resolveCommand(name)) return Promise.resolve(true);
   return new Promise((ok) => {
     const lookup = process.platform === "win32" ? "where" : "which";
-    const child = spawn(lookup, [name], { stdio: "ignore" });
+    const child = spawn(lookup, [name], { stdio: "ignore", env: commandEnv() });
     child.on("exit", (code) => ok(code === 0));
     child.on("error", () => ok(false));
   });
@@ -125,7 +290,12 @@ function openInBrowser(url: string): void {
 
 function runInherit(cmd: string, args: string[]): Promise<void> {
   return new Promise((ok, fail) => {
-    const child = spawn(cmd, args, { stdio: "inherit", cwd: ROOT });
+    const resolved = cmd === "node" ? cmd : (resolveCommand(cmd) ?? cmd);
+    const child = spawn(resolved, args, {
+      stdio: "inherit",
+      cwd: ROOT,
+      env: commandEnv(),
+    });
     child.on("exit", (code) =>
       code === 0 ? ok() : fail(new Error(`${cmd} ${args.join(" ")} exited ${code}`)),
     );
@@ -133,14 +303,19 @@ function runInherit(cmd: string, args: string[]): Promise<void> {
   });
 }
 
-function runCapture(cmd: string, args: string[]): Promise<string> {
+function runCapture(cmd: string, args: string[], options: { echoOutput?: boolean } = {}): Promise<string> {
   return new Promise((ok, fail) => {
-    const child = spawn(cmd, args, { stdio: ["inherit", "pipe", "pipe"], cwd: ROOT });
+    const resolved = cmd === "node" ? cmd : (resolveCommand(cmd) ?? cmd);
+    const child = spawn(resolved, args, {
+      stdio: ["inherit", "pipe", "pipe"],
+      cwd: ROOT,
+      env: commandEnv(),
+    });
     let out = "";
     child.stdout.on("data", (d) => {
       const s = d.toString();
       out += s;
-      process.stdout.write(s);
+      if (options.echoOutput !== false) process.stdout.write(s);
     });
     child.stderr.on("data", (d) => process.stderr.write(d));
     child.on("exit", (code) =>
@@ -201,17 +376,20 @@ async function main() {
   console.log(`
 What this does:
   1. Configures your Telegram bot token
-  2. Asks about your Claude model preference
-  3. Runs \`npx convex dev\` to create a Convex project
-  4. Writes .env.local
+  2. Asks whether Boop should use your Claude Code or Codex subscription
+  3. Optionally enables local browser use
+  4. Runs \`npx convex dev\` to create a Convex project
+  5. Writes .env.local
 
 Before you start:
-  • A Claude Code subscription:    https://claude.com/code
-  • Convex account (free tier):    https://convex.dev
+  • Claude Code subscription if choosing Claude: https://claude.com/code
+  • Codex/ChatGPT account if choosing Codex:     run \`codex login\`
+  • Convex account (free tier):                  https://convex.dev
   • A Telegram account to create a bot via @BotFather
 `);
 
   const existing = readEnv(ENV_PATH);
+  const runtimeDefault = runtimeFromEnv(existing.BOOP_RUNTIME);
 
   const telegramAnswers = await promptTelegramConfig(existing);
 
@@ -219,14 +397,49 @@ Before you start:
     [
       {
         type: "select",
+        name: "BOOP_RUNTIME",
+        message: "Which subscription should Boop use for the agent runtime?",
+        choices: [
+          {
+            title: "Claude Code subscription",
+            value: "claude",
+            description: "Uses the Claude Agent SDK and your local `claude` login.",
+          },
+          {
+            title: "Codex / ChatGPT subscription",
+            value: "codex",
+            description: "Uses local `codex app-server` auth from `codex login`.",
+          },
+        ],
+        initial: runtimeDefault === "codex" ? 1 : 0,
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "claude" ? "select" : null,
         name: "BOOP_MODEL",
         message: "Which Claude model should the agent use?",
-        choices: [
-          { title: "claude-sonnet-4-6 (recommended)", value: "claude-sonnet-4-6" },
-          { title: "claude-opus-4-6 (slowest, most capable)", value: "claude-opus-4-6" },
-          { title: "claude-haiku-4-5 (fastest, cheapest)", value: "claude-haiku-4-5" },
-        ],
-        initial: 0,
+        choices: CLAUDE_MODEL_CHOICES,
+        initial: initialForChoice(CLAUDE_MODEL_CHOICES, existing.BOOP_MODEL),
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "codex" ? "select" : null,
+        name: "BOOP_CODEX_MODEL",
+        message: "Which Codex model should the agent use?",
+        choices: CODEX_MODEL_CHOICES,
+        initial: initialForChoice(CODEX_MODEL_CHOICES, existing.BOOP_CODEX_MODEL),
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "codex" ? "select" : null,
+        name: "BOOP_CODEX_REASONING_EFFORT",
+        message: "How much Codex reasoning effort should Boop use?",
+        choices: CODEX_REASONING_CHOICES,
+        initial: initialForChoice(
+          CODEX_REASONING_CHOICES,
+          existing.BOOP_CODEX_REASONING_EFFORT,
+          1,
+        ),
       },
       {
         type: "text",
@@ -249,7 +462,17 @@ Before you start:
     },
   );
 
-  Object.assign(answers, telegramAnswers);
+  // Merge prompted defaults with what the user answered (answer wins).
+  Object.assign(answers, telegramAnswers, {
+    BOOP_RUNTIME: answers.BOOP_RUNTIME ?? runtimeDefault,
+    BOOP_MODEL: answers.BOOP_MODEL ?? existing.BOOP_MODEL ?? DEFAULT_CLAUDE_MODEL,
+    BOOP_CODEX_MODEL:
+      answers.BOOP_CODEX_MODEL ?? existing.BOOP_CODEX_MODEL ?? DEFAULT_CODEX_MODEL,
+    BOOP_CODEX_REASONING_EFFORT:
+      answers.BOOP_CODEX_REASONING_EFFORT ??
+      existing.BOOP_CODEX_REASONING_EFFORT ??
+      DEFAULT_CODEX_REASONING_EFFORT,
+  });
 
   // ---- Composio API key ---------------------------------------------------
   banner("Composio — integrations (Gmail, Slack, GitHub, Linear, 1000+ more)");
@@ -325,7 +548,7 @@ how you want to generate embeddings:
 
   • Local  — free, runs in-process via @huggingface/transformers
             (Xenova/bge-large-en-v1.5, 1024-dim). First run downloads
-            ~440MB and caches forever. No API key.
+            ~1.3GB and caches in Boop's local data folder. No API key.
   • Voyage — paid, ~$0.06/M tokens. Slightly stronger English retrieval.
   • OpenAI — paid, ~$0.13/M tokens. Comparable to Voyage.
 
@@ -381,17 +604,73 @@ so you can switch later by adding/removing the API key.
       type: "confirm",
       name: "preload",
       message:
-        "Pre-download the local model now? (~440MB, ~30s on broadband — saves the wait on first recall)",
+        "Pre-download the local model now? (~1.3GB — saves the wait on first recall)",
       initial: true,
     });
     if (preload) {
       console.log("\nDownloading Xenova/bge-large-en-v1.5… (Ctrl+C to skip)\n");
       try {
-        await runInherit("npx", ["tsx", "scripts/preload-embeddings.ts"]);
+        const tsx = packageCommand("tsx", "tsx");
+        await runInherit(tsx.cmd, [...tsx.leading, "scripts/preload-embeddings.ts"]);
         console.log("✓ Local model cached.");
       } catch (err) {
         console.warn(
           "Preload failed — model will download on first recall instead.",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  // ---- Local browser use ---------------------------------------------------
+  banner("Local browser use — optional");
+  console.log(`
+Boop can optionally expose a local Patchright Chrome profile to spawned agents.
+Use it for login-required services, visual browser workflows, or sites that
+reject ordinary automation. It is off by default, and agents cannot see or use
+the browser integration unless you enable it.
+`);
+
+  const { enableLocalBrowser } = await prompts(
+    {
+      type: "confirm",
+      name: "enableLocalBrowser",
+      message: "Enable Local browser use now?",
+      initial: existing.BOOP_BROWSER_ENABLED === "true",
+    },
+    {
+      onCancel: () => {
+        console.log("Setup cancelled.");
+        process.exit(1);
+      },
+    },
+  );
+  (answers as any).BOOP_BROWSER_ENABLED = enableLocalBrowser ? "true" : "false";
+
+  if (enableLocalBrowser) {
+    const { installBrowser } = await prompts(
+      {
+        type: "confirm",
+        name: "installBrowser",
+        message: "Install the Patchright Chrome browser binary now?",
+        initial: false,
+      },
+      {
+        onCancel: () => {
+          console.log("Setup cancelled.");
+          process.exit(1);
+        },
+      },
+    );
+    if (installBrowser) {
+      console.log("\nInstalling Patchright Chrome… (Ctrl+C to skip)\n");
+      try {
+        const patchright = packageCommand("patchright", "patchright");
+        await runInherit(patchright.cmd, [...patchright.leading, "install", "chrome"]);
+        console.log("✓ Patchright Chrome installed.");
+      } catch (err) {
+        console.warn(
+          "Patchright Chrome install failed — you can retry from Settings later.",
           err instanceof Error ? err.message : err,
         );
       }
@@ -467,8 +746,26 @@ testing. For a stable URL, pick one of:
   if (env.VITE_CONVEX_URL?.includes("example.convex.cloud")) delete env.VITE_CONVEX_URL;
   writeEnv(ENV_PATH, env);
 
-  banner("Claude authentication");
-  console.log(`This project uses your Claude Code subscription — no Anthropic API key needed.
+  if (env.BOOP_RUNTIME === "codex") {
+    const codexInstalled = await hasBinary("codex");
+    banner("Codex authentication");
+    console.log(`This project uses your Codex / ChatGPT subscription through local Codex auth — no OpenAI API key needed.
+
+If you haven't already:
+  • Install Codex CLI:  npm install -g @openai/codex
+  • Run once:           codex login
+  • Sign in when prompted
+
+Boop reads the Codex credentials saved on disk. Set BOOP_CODEX_AUTH_HOME in
+.env.local only if you need Boop to read a different Codex home containing
+auth.json.
+
+${codexInstalled ? "✓ Codex CLI found on PATH." : "⚠ Codex CLI was not found on PATH. Install it before running `npm run dev`."}
+`);
+  } else {
+    const claudeInstalled = await hasBinary("claude");
+    banner("Claude authentication");
+    console.log(`This project uses your Claude Code subscription — no Anthropic API key needed.
 
 If you haven't already:
   • Install Claude Code:  npm install -g @anthropic-ai/claude-code
@@ -477,29 +774,32 @@ If you haven't already:
 
 The Claude Agent SDK reads the credentials Claude Code saves on disk.
 You can override with ANTHROPIC_API_KEY in .env.local if you'd rather use an API key.
+
+${claudeInstalled ? "✓ Claude Code found on PATH." : "⚠ Claude Code was not found on PATH. Install it before running `npm run dev`."}
 `);
+  }
 
   if (answers.runConvex) {
     await runConvexDev();
     const after = readEnv(ENV_PATH);
 
-    // CONVEX_URL or VITE_CONVEX_URL is written to .env.local as part of `convex dev`; derive CONVEX_URL from it
-    // if not available, fallback to deriving from CONVEX_DEPLOYMENT.
+    // VITE_CONVEX_URL is written to .env.local as part of `convex dev`. The
+    // server falls back to it, so avoid writing an active CONVEX_URL too; Convex
+    // CLI treats multiple Convex URL env vars as ambiguous.
     const deploymentMatch =
       after.CONVEX_DEPLOYMENT?.match(/^([a-z]+):([\w-]+)/);
 
     if (deploymentMatch) {
       const url =
-        after.CONVEX_URL ||
         after.VITE_CONVEX_URL ||
+        after.CONVEX_URL ||
         `https://${deploymentMatch[2]}.convex.cloud`;
-      if (after.CONVEX_URL !== url || after.VITE_CONVEX_URL !== url) {
+      if (after.VITE_CONVEX_URL !== url || after.CONVEX_URL) {
         writeEnv(ENV_PATH, {
           ...after,
-          CONVEX_URL: url,
           VITE_CONVEX_URL: url,
         });
-        console.log(`\n✓ Synced CONVEX_URL + VITE_CONVEX_URL → ${url}`);
+        console.log(`\n✓ Synced VITE_CONVEX_URL → ${url}`);
       }
     }
   } else {
@@ -539,6 +839,12 @@ Integrations (via Composio):
   2. Open the debug dashboard → Connections tab.
   3. Click Connect on any toolkit (Gmail, Slack, GitHub, Linear, Notion, …).
   4. Composio handles OAuth; the toolkit becomes available to the agent.
+
+Local browser use:
+  • Off by default unless you enabled it during setup or in Settings.
+  • Open the debug dashboard → Settings → Local browser use to toggle it.
+  • The Patchright Chrome binary is installed only if you opt in from setup
+    or click "Install Patchright Chrome" in the local browser settings.
 `);
 }
 

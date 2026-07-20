@@ -8,6 +8,40 @@ Format:
 
 ---
 
+## Unreleased — Optional local Apple data
+
+- Added: optional Mac-only, read-only local Apple data connectors for iMessage/SMS history, Apple Notes, and Apple Reminders. The integration is off by default and requires both the master Apple data toggle and a per-source connect action before tools are exposed.
+- Added: Debug UI Local Mac connection cards for iMessage, Apple Notes, and Apple Reminders, plus Settings-panel Apple status and permission helpers for Full Disk Access and macOS Automation.
+- Added: local-only `/apple/*` control routes and Convex-backed Apple settings with `.env.local` fallbacks (`BOOP_APPLE_ENABLED`, `BOOP_APPLE_MESSAGES_ENABLED`, `BOOP_APPLE_NOTES_ENABLED`, `BOOP_APPLE_REMINDERS_ENABLED`).
+- Added: phone-number and contact-handle redaction for Apple tool output, agent replies, outgoing iMessage paths, and server log previews.
+
+## Unreleased — Social Composio connectors
+
+- Added: Instagram and YouTube to the default Composio connector catalog.
+
+## Unreleased — MMS image viewing + cross-runtime image spawning
+
+- Added: optional local browser use via a Patchright-backed persistent Chrome/Chromium profile. It is off by default and agents do not see or use the `browser` integration until the user enables "Local browser use" in Settings. Once enabled, it is available as a fallback for login-only services, JS-heavy/visual workflows, and bot-wall-sensitive pages, with a manual login handoff tool that opens a visible browser and tells the user: "I need you to log in first. I’ve spawned an instance on your machine."
+- Added: Debug UI local browser settings for the master enable toggle, browser visibility, login handoff, launch URL, profile directory, channel/executable path, extra flags, install, launch, spawn-login, close, and status. Patchright is an optional dependency, and the Patchright browser binary is installed only when the user opts in during setup or clicks the install control.
+- Added: Debug UI local browser status now surfaces an "Install needed" state with an install CTA when no compatible Chrome/Chromium binary is detected.
+- Fixed: Codex runtime local browser tools now use the internal `local_browser` namespace so they do not collide with reserved Responses API browser namespaces. The Debug UI and spawned-agent integration still present this as "browser" / "Local browser use".
+- Fixed: local browser controls are local-only HTTP routes, `browser_fill` redacts typed text before agent-log persistence, explicit-browser routing now requires strong local-browser intent, and the manual launch URL can be cleared to open `about:blank`.
+- Added: inbound Sendblue MMS images are downloaded, MIME/size validated, uploaded to Convex storage, and passed as image blocks to the dispatcher. Direct image Q&A was validated on both Codex (`gpt-5.4-mini`) and Claude (`claude-opus-4-7`) with persisted `imageStorageIds` and no `mediaError`.
+- Added: current-turn image refs now propagate into spawned execution agents for both runtime paths. The dispatcher passes image refs through `spawn_agent`, execution-agent prompts include image blocks, and the shared runtime adapters convert them for Claude Agent SDK and Codex.
+- Changed: dispatcher instructions now state the general image routing contract: answer directly only from the message/image when possible; if external sources, current information, integrations, file/system access, or verification are needed, call `spawn_agent` and pass the relevant `imageRefs`.
+- Fixed: when `spawn_agent` is called during an image turn and the model omits or empties `imageRefs`, Boop now attaches all current-turn images by default. A non-empty `imageRefs` list can still narrow to a subset.
+- Fixed: explicit runtime switch commands such as "switch to Codex" now update the runtime setting directly instead of relying on the dispatcher to emit a self-tool call.
+- Fixed: dispatcher turns now fall back to text-only handling if stored image bytes cannot be retrieved, and stored image retrieval uses a streaming size cap before buffering bytes.
+- Fixed: image cleanup now checks memory anchors with bounded pagination, clears message image refs before deleting blobs, uses Convex cursors for expiry scans, and deduplicates blob deletes across repeated refs.
+- Added: image storage count in the Dashboard, image markers in Memory records, and cleanup for raw image bytes after configurable retention unless anchored by memory.
+- Test note: validated direct vision and image ref propagation across Claude Agent SDK and Codex, including live MMS turns and local `handleUserMessage` reproductions.
+
+## Unreleased — Cross-runtime slash-command upgrade workflow
+
+- Changed: `/upgrade-boop` is the single documented upgrade path. The upstream reminder printed by `npm run dev` now points users to open Codex or Claude in the repo and run `/upgrade-boop`.
+- Changed: README/package metadata now lead with the runtime choice: Claude Code subscription via the Claude Agent SDK, or Codex / ChatGPT subscription via the local Codex runtime.
+- Changed: upgrade and contribution docs now make the cross-runtime skill convention explicit: migration skills referenced from `[BREAKING]` CHANGELOG entries should be mirrored in both `.claude/skills/` and `.agents/skills/` unless intentionally provider-specific.
+
 ## Unreleased — Local embeddings fallback + mandatory recall
 
 - Added: free local embedding fallback via `@huggingface/transformers` (`Xenova/bge-large-en-v1.5`, 1024-dim). `server/embeddings.ts` now tries Voyage → OpenAI → local in order. All three providers produce 1024-dim vectors so the existing Convex `vectorIndex("by_embedding", { dimensions: 1024 })` stays compatible — users running with a paid key see no change; users without one go from "recall silently degraded to literal substring match" to working semantic recall out of the box.

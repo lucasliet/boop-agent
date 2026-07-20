@@ -1,8 +1,9 @@
-import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { api } from "../convex/_generated/api.js";
 import { convex } from "./convex-client.js";
 import { spawnExecutionAgent } from "./execution-agent.js";
+import { defineRuntimeTool } from "./runtimes/tool.js";
+import { runtimeText, type RuntimeTool } from "./runtimes/types.js";
 import {
   SKILL_AUTHOR_PERSONA,
   SKILL_LINKEDIN_POST,
@@ -430,122 +431,100 @@ ${opts.text}`;
 }
 
 /**
- * Creates the boop-article MCP server exposing start_article_pipeline,
+ * Runtime-agnostic boop-article tools exposing start_article_pipeline,
  * revise_article_draft, and refine_user_post to the dispatcher.
  */
-export function createArticlePipelineMcp(
+export function createArticlePipelineTools(
   conversationId: string,
   onProgress: (stage: string, message: string) => void,
-) {
-  return createSdkMcpServer({
-    name: "boop-article",
-    version: "0.1.0",
-    tools: [
-      tool(
-        "start_article_pipeline",
-        `Run the full LinkedIn article pipeline (researcher → briefer → writer → editor + QA).
+): RuntimeTool[] {
+  return [
+    defineRuntimeTool(
+      "boop-article",
+      "start_article_pipeline",
+      `Run the full LinkedIn article pipeline (researcher → briefer → writer → editor + QA).
 Returns a draftId and the final article text after all stages complete. The user must approve via send_draft.
 Use for: "write a LinkedIn post about X", "create an article from this research", "draft a post".
 Do NOT use for adjustments to an existing draft — use revise_article_draft instead.`,
-        {
-          input: z
-            .string()
-            .describe("Either a topic/angle, or raw research notes to synthesize."),
-          inputType: z
-            .enum(["topic", "research"])
-            .describe(
-              '"topic" for a single topic or angle; "research" for pasted research notes or URLs.',
-            ),
-        },
-        async (args) => {
-          const { draftId, articleText } = await runArticlePipeline({
-            input: args.input,
-            inputType: args.inputType,
-            conversationId,
-            onProgress,
-          });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Pipeline complete. Draft ID: ${draftId}\n\n${articleText}`,
-              },
-            ],
-          };
-        },
-      ),
+      {
+        input: z
+          .string()
+          .describe("Either a topic/angle, or raw research notes to synthesize."),
+        inputType: z
+          .enum(["topic", "research"])
+          .describe(
+            '"topic" for a single topic or angle; "research" for pasted research notes or URLs.',
+          ),
+      },
+      async (args) => {
+        const { draftId, articleText } = await runArticlePipeline({
+          input: args.input,
+          inputType: args.inputType,
+          conversationId,
+          onProgress,
+        });
+        return runtimeText(`Pipeline complete. Draft ID: ${draftId}\n\n${articleText}`);
+      },
+    ),
 
-      tool(
-        "revise_article_draft",
-        `Apply targeted revisions to an existing pending LinkedIn draft, then re-run QA.
+    defineRuntimeTool(
+      "boop-article",
+      "revise_article_draft",
+      `Apply targeted revisions to an existing pending LinkedIn draft, then re-run QA.
 Rejects the old draft and returns a new draftId with the revised text.
 Use for: "make the hook punchier", "shorten the CTA", "adjust the tone", any tweak to a post already drafted.
 Do NOT use for a completely new topic — use start_article_pipeline instead.`,
-        {
-          draftId: z.string().describe("The pending draft ID to revise."),
-          instructions: z
-            .string()
-            .describe("Specific changes to apply, e.g. 'make the hook more direct and cut the last bullet'."),
-        },
-        async (args) => {
-          const { draftId, articleText } = await reviseArticleDraft({
-            draftId: args.draftId,
-            instructions: args.instructions,
-            conversationId,
-            onProgress,
-          });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Revision complete. New draft ID: ${draftId}\n\n${articleText}`,
-              },
-            ],
-          };
-        },
-      ),
+      {
+        draftId: z.string().describe("The pending draft ID to revise."),
+        instructions: z
+          .string()
+          .describe("Specific changes to apply, e.g. 'make the hook more direct and cut the last bullet'."),
+      },
+      async (args) => {
+        const { draftId, articleText } = await reviseArticleDraft({
+          draftId: args.draftId,
+          instructions: args.instructions,
+          conversationId,
+          onProgress,
+        });
+        return runtimeText(`Revision complete. New draft ID: ${draftId}\n\n${articleText}`);
+      },
+    ),
 
-      tool(
-        "refine_user_post",
-        `Refine a finished LinkedIn post the USER pasted in the chat (not one we drafted).
+    defineRuntimeTool(
+      "boop-article",
+      "refine_user_post",
+      `Refine a finished LinkedIn post the USER pasted in the chat (not one we drafted).
 Runs an optional fact-checker (web search) and then the editor + QA stage. Preserves the author's voice — does NOT regenerate the post.
 Returns a draftId the user can approve via send_draft.
 Use for: "refina esse post que escrevi", "polish this post I wrote", "checa os fatos e ajusta", any case where the user pastes their own finished post and wants polish/fact-check.
 Do NOT use start_article_pipeline (that rewrites from scratch).
 Do NOT use revise_article_draft (that requires an existing draftId from a draft we created).`,
-        {
-          text: z.string().describe("The full post text the user wrote."),
-          instructions: z
-            .string()
-            .optional()
-            .describe(
-              "Optional revision notes from the user (e.g. 'shorten the intro', 'tom mais direto'). Omit if the user just said 'refina'.",
-            ),
-          factCheck: z
-            .boolean()
-            .optional()
-            .describe(
-              "Whether to run web-search fact-checking before editing. Default true. Set false for purely stylistic polish to skip the search cost.",
-            ),
-        },
-        async (args) => {
-          const { draftId, articleText } = await refineUserPost({
-            text: args.text,
-            instructions: args.instructions,
-            factCheck: args.factCheck,
-            conversationId,
-            onProgress,
-          });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Refinement complete. Draft ID: ${draftId}\n\n${articleText}`,
-              },
-            ],
-          };
-        },
-      ),
-    ],
-  });
+      {
+        text: z.string().describe("The full post text the user wrote."),
+        instructions: z
+          .string()
+          .optional()
+          .describe(
+            "Optional revision notes from the user (e.g. 'shorten the intro', 'tom mais direto'). Omit if the user just said 'refina'.",
+          ),
+        factCheck: z
+          .boolean()
+          .optional()
+          .describe(
+            "Whether to run web-search fact-checking before editing. Default true. Set false for purely stylistic polish to skip the search cost.",
+          ),
+      },
+      async (args) => {
+        const { draftId, articleText } = await refineUserPost({
+          text: args.text,
+          instructions: args.instructions,
+          factCheck: args.factCheck,
+          conversationId,
+          onProgress,
+        });
+        return runtimeText(`Refinement complete. Draft ID: ${draftId}\n\n${articleText}`);
+      },
+    ),
+  ];
 }
