@@ -593,7 +593,8 @@ function ingestLine(line) {
 
   const next = { lastMessage: plain };
   let checkWebhookForPublicUrl = "";
-  if (/boop-agent server listening on :/.test(plain)) next.server = "running";
+  // Matches both "listening on :3456" (upstream) and "listening on 0.0.0.0:3456" (fork binds LAN).
+  if (/boop-agent server listening on \S*:/.test(plain)) next.server = "running";
   if (/Convex functions ready/.test(plain)) next.convex = "running";
 
   const dashboardMatch =

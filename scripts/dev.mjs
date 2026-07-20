@@ -257,7 +257,8 @@ const serverChild = run(
   "server",
   tsxBin.cmd,
   [...tsxBin.args, "watch", "server/index.ts"],
-  /listening on :/,
+  // Fork logs "listening on 0.0.0.0:<port>" (LAN bind); upstream logs "listening on :<port>".
+  /listening on \S*:/,
 );
 convexEnvFile = writeConvexDevEnvFile();
 const convexArgs = ["convex", "dev"];
