@@ -381,6 +381,10 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
 
   const tag = opts.turnTag ?? turnId.slice(-6);
   const log = (msg: string) => console.log(`[turn ${tag}] ${msg}`);
+  // Turn lifecycle is logged here (not per-channel) so /chat, proactive turns
+  // and future channels get the same arrival/reply trail as Telegram.
+  const preview = opts.content.length > 100 ? `${opts.content.slice(0, 100)}…` : opts.content;
+  log(`← ${opts.conversationId}: ${JSON.stringify(preview)}`);
 
   const turnStart = Date.now();
   // Snapshot runtime for this top-level turn so same-turn set_runtime/set_model
@@ -673,6 +677,11 @@ export async function handleUserMessage(opts: HandleOpts): Promise<string> {
       imageStorageIds: inboundImageStorageIds,
     }).catch((err) => console.error("[interaction] extraction error", err));
   }
+
+  const replyPreview = reply.length > 100 ? `${reply.slice(0, 100)}…` : reply;
+  log(
+    `→ reply (${((Date.now() - turnStart) / 1000).toFixed(1)}s, ${reply.length} chars): ${JSON.stringify(replyPreview)}`,
+  );
 
   return reply;
 }

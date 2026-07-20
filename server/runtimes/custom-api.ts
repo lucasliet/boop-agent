@@ -10,7 +10,8 @@ import type {
   ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions";
 import type { RuntimeRunRequest, RuntimeRunResult, RuntimeTool } from "./types.js";
-import { EMPTY_USAGE, estimateOpenAiCostUsd, type UsageTotals } from "../usage.js";
+import { EMPTY_USAGE, type UsageTotals } from "../usage.js";
+import { ensureModelPrices, estimateCustomCostUsd } from "../model-prices.js";
 import { formatError } from "../error-format.js";
 
 const MAX_TOOL_ITERATIONS = 25;
@@ -96,6 +97,7 @@ function applyUsageChunk(
   totals: UsageTotals,
   usage: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null | undefined,
   model: string,
+  baseUrl?: string,
 ): UsageTotals {
   if (!usage) return totals;
   const next: UsageTotals = {
@@ -106,7 +108,7 @@ function applyUsageChunk(
     cacheCreationTokens: totals.cacheCreationTokens,
     costUsd: 0,
   };
-  next.costUsd = estimateOpenAiCostUsd(next);
+  next.costUsd = estimateCustomCostUsd(next, baseUrl);
   return next;
 }
 
@@ -173,6 +175,8 @@ export async function runCustomApiAgent(
   request: RuntimeRunRequest,
   opts: CustomApiAgentOptions,
 ): Promise<RuntimeRunResult> {
+  await ensureModelPrices();
+
   const client = new OpenAI({
     baseURL: opts.baseUrl,
     apiKey: opts.apiKey ?? "boop",
@@ -183,7 +187,7 @@ export async function runCustomApiAgent(
   let usage: UsageTotals = { ...EMPTY_USAGE, model: request.model };
 
   const onUsageDelta = (delta: ChatCompletionChunk["usage"] | ChatCompletion["usage"]) => {
-    usage = applyUsageChunk(usage, delta, request.model);
+    usage = applyUsageChunk(usage, delta, request.model, opts.baseUrl);
     void request.onUsage?.(usage);
   };
 

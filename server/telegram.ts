@@ -122,9 +122,6 @@ export function createTelegramRouter(): express.Router {
     const content: string = message.text;
     const conversationId = `tg:${userId}`;
     const turnTag = Math.random().toString(36).slice(2, 8);
-    const preview = content.length > 100 ? content.slice(0, 100) + "…" : content;
-    console.log(`[turn ${turnTag}] ← ${userId}: ${JSON.stringify(preview)}`);
-    const start = Date.now();
 
     broadcast("message_in", { conversationId, content, userId, chatId });
     res.json({ ok: true });
@@ -148,11 +145,6 @@ export function createTelegramRouter(): express.Router {
         onThinking: (t) => broadcast("thinking", { conversationId, t }),
       });
       if (reply) {
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        const replyPreview = reply.length > 100 ? reply.slice(0, 100) + "…" : reply;
-        console.log(
-          `[turn ${turnTag}] → reply (${elapsed}s, ${reply.length} chars): ${JSON.stringify(replyPreview)}`,
-        );
         await sendTelegramMessage(chatId, reply);
         await convex.mutation(api.messages.send, {
           conversationId,
