@@ -8,6 +8,9 @@ const RUNTIME_KEY = "runtime";
 const CLAUDE_MODEL_KEY = "model";
 const CODEX_MODEL_KEY = "codex_model";
 const CODEX_REASONING_EFFORT_KEY = "codex_reasoning_effort";
+const CUSTOM_BASE_URL_KEY = "custom_base_url";
+const CUSTOM_API_KEY_KEY = "custom_api_key";
+const CUSTOM_MODEL_KEY = "custom_model";
 const BROWSER_ENABLED_KEY = "browser_enabled";
 const BROWSER_PROFILE_DIR_KEY = "browser_profile_dir";
 const BROWSER_SHOW_UI_KEY = "browser_show_ui";
@@ -29,6 +32,8 @@ export interface RuntimeConfig {
   model: string;
   reasoningEffort?: RuntimeReasoningEffort;
   billingMode: "api" | "codex-subscription";
+  customBaseUrl?: string;
+  customApiKey?: string;
 }
 
 let cachedConfig: { at: number; value: RuntimeConfig } | null = null;
@@ -74,6 +79,11 @@ export const RUNTIME_ALIASES: Record<string, RuntimeName> = {
   codex: "codex",
   chatgpt: "codex",
   "chatgpt codex": "codex",
+  custom: "custom",
+  "custom api": "custom",
+  "custom-api": "custom",
+  openai: "custom",
+  "openai-compatible": "custom",
 };
 
 // Backward-compatible names kept for existing imports and prompt text.
@@ -132,6 +142,12 @@ export function resolveModelInput(
   runtime: RuntimeName = "claude",
 ): string | null {
   const lower = input.trim().toLowerCase();
+  if (runtime === "custom") {
+    // Custom OpenAI-compatible endpoints serve arbitrary, case-sensitive model
+    // names, so any non-empty string is accepted instead of a whitelist lookup.
+    const trimmed = input.trim();
+    return trimmed || null;
+  }
   if (runtime === "codex") {
     if (KNOWN_CODEX_MODELS.has(lower)) return lower;
     return CODEX_MODEL_ALIASES[lower] ?? null;
@@ -206,6 +222,30 @@ export function parseEnvExtraArgs(input: string | undefined): string[] {
   return parseExtraArgs(input?.replace(/[ \t]+/g, "\n") ?? null);
 }
 
+const DEFAULT_CUSTOM_BASE_URL = "http://localhost:11434/v1";
+
+export interface CustomApiConfig {
+  baseUrl: string;
+  apiKey: string | null;
+  model: string;
+}
+
+export async function getCustomApiConfig(): Promise<CustomApiConfig> {
+  const [baseUrl, apiKey, model] = await Promise.all([
+    getSetting(CUSTOM_BASE_URL_KEY),
+    getSetting(CUSTOM_API_KEY_KEY),
+    getSetting(CUSTOM_MODEL_KEY),
+  ]);
+  return {
+    baseUrl:
+      baseUrl?.trim() ||
+      process.env.BOOP_CUSTOM_BASE_URL?.trim() ||
+      DEFAULT_CUSTOM_BASE_URL,
+    apiKey: apiKey?.trim() || process.env.BOOP_CUSTOM_API_KEY?.trim() || null,
+    model: model?.trim() || process.env.BOOP_CUSTOM_MODEL?.trim() || "",
+  };
+}
+
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   if (cachedConfig && Date.now() - cachedConfig.at < CONFIG_TTL_MS) {
     return cachedConfig.value;
@@ -215,19 +255,29 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   let model: string;
   let reasoningEffort: RuntimeReasoningEffort | undefined;
   let billingMode: RuntimeConfig["billingMode"];
+  let customBaseUrl: string | undefined;
+  let customApiKey: string | undefined;
 
   if (runtime === "codex") {
     const stored = await getSetting(CODEX_MODEL_KEY);
     model = stored && KNOWN_CODEX_MODELS.has(stored) ? stored : codexEnvFallback();
     reasoningEffort = resolveReasoningEffort(await getSetting(CODEX_REASONING_EFFORT_KEY));
     billingMode = "codex-subscription";
+  } else if (runtime === "custom") {
+    const custom = await getCustomApiConfig();
+    model = custom.model;
+    billingMode = "api";
+    customBaseUrl = custom.baseUrl;
+    // Kept in memory only for the runtime dispatch; never logged or returned
+    // over HTTP (see the /runtime-config routes).
+    customApiKey = custom.apiKey ?? undefined;
   } else {
     const stored = await getSetting(CLAUDE_MODEL_KEY);
     model = stored && KNOWN_MODELS.has(stored) ? stored : claudeEnvFallback();
     billingMode = "api";
   }
 
-  const value = { runtime, model, reasoningEffort, billingMode };
+  const value = { runtime, model, reasoningEffort, billingMode, customBaseUrl, customApiKey };
   cachedConfig = { at: Date.now(), value };
   return value;
 }
@@ -243,10 +293,13 @@ export async function setRuntimeProvider(runtime: RuntimeName): Promise<void> {
 
 export async function setRuntimeModel(model: string, runtime?: RuntimeName): Promise<void> {
   const targetRuntime = runtime ?? (await getRuntimeConfig()).runtime;
-  await convex.mutation(api.settings.set, {
-    key: targetRuntime === "codex" ? CODEX_MODEL_KEY : CLAUDE_MODEL_KEY,
-    value: model,
-  });
+  const key =
+    targetRuntime === "codex"
+      ? CODEX_MODEL_KEY
+      : targetRuntime === "custom"
+        ? CUSTOM_MODEL_KEY
+        : CLAUDE_MODEL_KEY;
+  await convex.mutation(api.settings.set, { key, value: model });
   cachedConfig = null;
 }
 
@@ -260,11 +313,49 @@ export async function setCodexReasoningEffort(
   cachedConfig = null;
 }
 
+export async function setCustomApiConfig(input: {
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+}): Promise<void> {
+  const writes: Array<Promise<unknown>> = [];
+  if (input.baseUrl !== undefined) {
+    writes.push(
+      convex.mutation(api.settings.set, {
+        key: CUSTOM_BASE_URL_KEY,
+        value: input.baseUrl,
+      }),
+    );
+  }
+  if (input.apiKey !== undefined) {
+    writes.push(
+      convex.mutation(api.settings.set, {
+        key: CUSTOM_API_KEY_KEY,
+        value: input.apiKey,
+      }),
+    );
+  }
+  if (input.model !== undefined) {
+    writes.push(
+      convex.mutation(api.settings.set, {
+        key: CUSTOM_MODEL_KEY,
+        value: input.model,
+      }),
+    );
+  }
+  await Promise.all(writes);
+  cachedConfig = null;
+}
+
 export async function clearRuntimeModel(runtime?: RuntimeName): Promise<void> {
   const targetRuntime = runtime ?? (await getRuntimeConfig()).runtime;
-  await convex.mutation(api.settings.clear, {
-    key: targetRuntime === "codex" ? CODEX_MODEL_KEY : CLAUDE_MODEL_KEY,
-  });
+  const key =
+    targetRuntime === "codex"
+      ? CODEX_MODEL_KEY
+      : targetRuntime === "custom"
+        ? CUSTOM_MODEL_KEY
+        : CLAUDE_MODEL_KEY;
+  await convex.mutation(api.settings.clear, { key });
   cachedConfig = null;
 }
 

@@ -4,12 +4,13 @@
 
 # Boop
 
-A Telegram-based personal agent you can run with either your Claude Code subscription or your Codex / ChatGPT subscription.
+A Telegram-based personal agent you can run with your Claude Code subscription, your Codex / ChatGPT subscription, or any OpenAI-compatible API endpoint.
 
 Choose your runtime during setup:
 
 - **Claude** — powered by the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) and your local Claude Code login.
 - **Codex** — powered by the local Codex app-server runtime and your local `codex login`.
+- **Custom API** — any OpenAI-compatible chat completions endpoint (Ollama, LM Studio, OpenRouter, vLLM, …) called directly over HTTP with the `openai` SDK. No CLI to install.
 
 No Anthropic or OpenAI API key is required for the agent runtime when using subscription auth.
 
@@ -26,7 +27,7 @@ No Anthropic or OpenAI API key is required for the agent runtime when using subs
 ```
 
 Built on:
-- [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) or local Codex runtime — choose your provider during setup
+- [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript), local Codex runtime, or any OpenAI-compatible endpoint — choose your provider during setup
 - [grammY](https://grammy.dev) — Telegram Bot framework (webhook handler, typing indicator, message chunking)
 - [Composio](https://composio.dev/?utm_source=chris&utm_medium=youtube&utm_campaign=collab) — integrations layer. One API key = Gmail, Slack, GitHub, Linear, Notion, Stripe, Supabase, + ~1000 more with hosted OAuth
 - [Convex](https://convex.link/chrisraroque) — real-time database for memory, agents, drafts
@@ -53,7 +54,7 @@ Built on:
 - **Debug dashboard** (React + Vite) with a Boop mascot — Dashboard (usage, known cost, tokens, agent status), Agents (timeline + integration logos), Automations, Memory (table + force-directed graph), Events, Connections.
 - **Convex** for persistence — real-time, typed, free tier.
 - **Docker Compose** for self-hosting — one `docker compose up -d` and you're running.
-- **Uses your Claude Code or Codex/ChatGPT subscription** — choose during setup, with no separate provider API key required.
+- **Uses your Claude Code or Codex/ChatGPT subscription** — choose during setup, with no separate provider API key required — **or any OpenAI-compatible endpoint** (Custom API) if you bring your own base URL, key, and model.
 
 <p align="center">
   <img src="assets/agents-view.jpg" alt="Agents view in the Boop debug dashboard" width="900" />
@@ -111,7 +112,8 @@ You need accounts for these. Keep the tabs open — setup will ask for credentia
 
 | Service | Why | Free? | Discount code |
 |---|---|---|---|
-| [Claude Code](https://claude.com/code?ref=chrisraroque) or Codex / ChatGPT | Powers the agent. Install the matching CLI, sign in once, Boop uses your local session. | Subscription required | Working on getting one (if you work here, please reach out!) |
+| [Claude Code](https://claude.com/code?ref=chrisraroque) or Codex / ChatGPT | Powers the agent. Install the matching CLI, sign in once, Boop uses your local session. Not needed if you pick the Custom API runtime instead (see below). | Subscription required | Working on getting one (if you work here, please reach out!) |
+| OpenAI-compatible endpoint (optional) | Alternative to the subscriptions above: any chat completions API — Ollama, LM Studio, OpenRouter, vLLM, etc. No CLI required; setup asks for base URL, API key, and model. | Depends on the endpoint | — |
 | Telegram Bot | Create a bot with [@BotFather](https://t.me/BotFather) — `/newbot`, copy the token. | Free | — |
 | [Convex](https://convex.link/chrisraroque) | Database + realtime. | Free tier is plenty | Working on getting one (in touch with them 👀) |
 | [Composio](https://composio.dev/?utm_source=chris&utm_medium=youtube&utm_campaign=collab) | Integrations — one API key unlocks ~1000 toolkits. Optional if you just want chat + memory + automations without third-party access. | Free tier covers personal use | `CHRISXCOMPOSIO` — 1 month free on starter plan |
@@ -132,6 +134,7 @@ cd boop-agent
 npm install
 
 # 2. Install one agent runtime (one-time, global) and sign in
+#    (skip this step if you plan to use the Custom API runtime — no CLI needed)
 npm install -g @anthropic-ai/claude-code
 claude  # sign in, then Ctrl-C to exit
 # or:
@@ -405,10 +408,11 @@ Deep dive: [ARCHITECTURE.md](./ARCHITECTURE.md). Adding your own tools: [INTEGRA
 
 Skills are reusable playbooks — `SKILL.md` files that teach execution agents how to do a specific kind of task (write a YouTube script, draft a cold email, plan a trip, etc.).
 
-Boop now has two runtime paths, so keep this distinction in mind:
+Boop now has three runtime paths, so keep this distinction in mind:
 
 - Claude runtime: the Claude Agent SDK loads project skills from `.claude/skills/` when the execution agent boots.
 - Codex runtime: Boop keeps Codex-facing skills under `.agents/skills/`, while the core sub-agent loop, memory tools, draft tools, and integration tools are provided through Boop's runtime adapter.
+- Custom API runtime: like Codex, skills live under `.agents/skills/` and the sub-agent loop runs through Boop's runtime adapter — the server drives the tool-calling loop against the OpenAI-compatible endpoint.
 
 For capabilities that must work under both providers, keep the skill instructions mirrored in both directories or move the behavior into Boop's runtime tools/prompts. This applies to both runtime skills and upgrade/migration skills referenced from `CHANGELOG.md`. The dispatcher never loads skills directly; only spawned execution agents should do real work.
 
@@ -438,12 +442,13 @@ Examples included: `.claude/skills/youtube-script-writer/`, `.agents/skills/yout
 
 ---
 
-## Choosing Claude Code or Codex
+## Choosing a runtime
 
-`npm run setup` asks which subscription-backed runtime Boop should use:
+`npm run setup` asks which runtime Boop should use:
 
 - Claude Code subscription: uses the Claude Agent SDK and the credentials Claude Code writes to your machine when you sign in. You do not need an `ANTHROPIC_API_KEY`.
 - Codex / ChatGPT subscription: uses the local Codex app-server runtime and the credentials `codex login` writes to your machine. You do not need an `OPENAI_API_KEY` for the agent runtime.
+- Custom API: any OpenAI-compatible chat completions endpoint (Ollama, LM Studio, OpenRouter, vLLM, …). Boop calls it directly over HTTP with the `openai` SDK — no CLI to install, no subscription auth. Setup prompts for the base URL, API key, and model; you can also set them later in Settings or via `BOOP_CUSTOM_BASE_URL` / `BOOP_CUSTOM_API_KEY` / `BOOP_CUSTOM_MODEL` in `.env.local`. The endpoint must support tool calling for the agent loop to work.
 
 For Claude:
 
@@ -456,6 +461,12 @@ For Codex:
 - Install once: `npm install -g @openai/codex`
 - Run `codex login` in a terminal, sign in.
 - Boop reads that local auth. Set `BOOP_CODEX_AUTH_HOME` only if you need a custom Codex home.
+
+For Custom API:
+
+- Nothing to install — just have an OpenAI-compatible endpoint reachable (local or hosted).
+- Give setup the base URL (e.g. `http://localhost:11434/v1` for Ollama), API key (any placeholder works for keyless local servers), and model name.
+- The API key can be saved in the Convex `settings` table from the Settings UI (shown masked) or supplied via `BOOP_CUSTOM_API_KEY`.
 
 If you'd prefer Claude API-key billing (e.g. for a deployed server or Docker), set `ANTHROPIC_API_KEY` in `.env.local` and the Claude SDK will use it instead. The Codex runtime path uses local Codex subscription auth.
 
@@ -473,10 +484,11 @@ Everything lives in `.env.local` (auto-created by `npm run setup`). See `.env.ex
 | `TELEGRAM_WEBHOOK_SECRET` | recommended | Random string — validates that webhook calls are from Telegram. |
 | `TELEGRAM_ADMIN_USER_IDS` | recommended | Pipe-separated Telegram user IDs allowed to use the bot. Empty = public. |
 | `TELEGRAM_AUTO_WEBHOOK` | no | Set to `false` to disable auto-registration on `npm run dev`. Default: on. |
-| `BOOP_RUNTIME` | no | `claude` by default. Set `codex` to use local `codex app-server` with the ChatGPT/Codex account from `codex login`. |
+| `BOOP_RUNTIME` | no | `claude` by default. Set `codex` to use local `codex app-server` with the ChatGPT/Codex account from `codex login`, or `custom` to use an OpenAI-compatible endpoint. |
 | `BOOP_MODEL` | no | Default `claude-sonnet-4-6`. Used as the fallback when no runtime override is set. The user can switch the model at runtime from Telegram ("use opus", "switch to sonnet") via the `set_model` self-tool — that override is stored in the Convex `settings` table and takes precedence over this env var. |
 | `BOOP_CODEX_MODEL` / `BOOP_CODEX_REASONING_EFFORT` | no | Codex defaults when `BOOP_RUNTIME=codex`. Defaults: `gpt-5.5` and `medium`. |
 | `BOOP_CODEX_AUTH_HOME` | no | Optional path to a Codex home containing `auth.json`; otherwise Boop uses the current `codex login` auth. |
+| `BOOP_CUSTOM_BASE_URL` / `BOOP_CUSTOM_API_KEY` / `BOOP_CUSTOM_MODEL` | no | Custom API runtime defaults: OpenAI-compatible base URL, API key, and model. Settings saved from the UI take precedence; the API key is stored in Convex and masked in the UI. |
 | `BOOP_BROWSER_ENABLED` | no | Fallback for Local browser use. Default `false`. Runtime settings in Convex take precedence once changed from the dashboard. |
 | `BOOP_BROWSER_PROFILE_DIR` | no | Persistent Chrome profile directory. Default `~/.boop/browser-profile`. |
 | `BOOP_BROWSER_SHOW_UI` | no | `true` opens a visible Chrome window; `false` runs hidden/headless. Default `true`. |
@@ -613,6 +625,8 @@ Claude runtime: `total_cost_usd` comes from the Claude Agent SDK's `result` mess
 
 Codex runtime: `codex app-server` exposes token counts but not your actual subscription bill. Boop records `billingMode=codex-subscription`, stores the token counts, and estimates `costUsd` from OpenAI's published standard API token prices. Treat Codex dashboard spend as an API-equivalent usage proxy, not a bill.
 
+Custom API runtime: token counts are recorded as usual, but Boop has no price table for arbitrary models, so `costUsd` is estimated as 0 and dashboard cost tiles show $0 for custom runs. Check your provider's own billing for real spend.
+
 ### A note on runaway usage
 
 Boop's Claude SDK `query()` calls don't currently set `maxTurns` or `maxBudgetUsd`. Those are hard stops the Claude SDK exposes — set them and the agent aborts once the threshold hits, with whatever partial result it has. Codex subscription runs do not currently have the same dollar-budget stop because the app-server path exposes token counts, and Boop's Codex dollar amounts are estimates derived from those counts.
@@ -665,7 +679,7 @@ boop-agent/
 │   ├── telegram.ts                # Telegram webhook, reply, typing indicator
 │   ├── interaction-agent.ts       # Dispatcher
 │   ├── execution-agent.ts         # Sub-agent runner
-│   ├── runtime-config.ts          # Claude/Codex runtime selection + model defaults
+│   ├── runtime-config.ts          # Claude/Codex/Custom runtime selection + model defaults
 │   ├── automations.ts             # Cron loop
 │   ├── automation-tools.ts        # create/list/toggle/delete MCP
 │   ├── draft-tools.ts             # save_draft / send_draft / reject_draft MCP
@@ -690,6 +704,7 @@ boop-agent/
 │   ├── runtimes/
 │   │   ├── claude.ts              # Claude Agent SDK adapter
 │   │   ├── codex-app-server.ts    # Codex app-server adapter
+│   │   ├── custom-api.ts          # OpenAI-compatible endpoint adapter
 │   │   └── types.ts               # Shared runtime/tool contracts
 │   ├── memory/
 │   │   ├── types.ts

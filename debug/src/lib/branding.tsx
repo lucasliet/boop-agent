@@ -262,7 +262,7 @@ export function ClaudeLogo({ size = 12, className = "" }: { size?: number; class
   return <img src="/claude-logo.png" width={size} height={size} alt="Claude" className={`inline-block ${className}`} />;
 }
 
-export type RuntimeProvider = "claude" | "codex";
+export type RuntimeProvider = "claude" | "codex" | "custom";
 
 export function CodexLogo({ size = 12, className = "" }: { size?: number; className?: string }) {
   return (
@@ -276,6 +276,19 @@ export function CodexLogo({ size = 12, className = "" }: { size?: number; classN
   );
 }
 
+export function CustomApiLogo({ size = 12, className = "" }: { size?: number; className?: string }) {
+  // Generic mark for OpenAI-compatible custom endpoints — no brand asset.
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-[4px] bg-violet-500/15 font-semibold leading-none text-violet-400 ${className}`}
+      style={{ width: size, height: size, fontSize: Math.max(5, Math.round(size * 0.36)) }}
+      aria-hidden="true"
+    >
+      API
+    </span>
+  );
+}
+
 export function RuntimeProviderLogo({
   runtime,
   size = 16,
@@ -285,6 +298,9 @@ export function RuntimeProviderLogo({
   size?: number;
   className?: string;
 }) {
+  if (runtime === "custom") {
+    return <CustomApiLogo size={size} className={className} />;
+  }
   return runtime === "codex" ? (
     <CodexLogo size={size} className={className} />
   ) : (
@@ -305,7 +321,7 @@ export function RuntimeProviderBadge({
   compact?: boolean;
   className?: string;
 }) {
-  const label = runtime === "codex" ? "Codex" : "Claude";
+  const label = runtime === "codex" ? "Codex" : runtime === "custom" ? "Custom API" : "Claude";
   return (
     <div
       className={`inline-flex min-w-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1.5 ${

@@ -67,6 +67,24 @@ Browser control HTTP routes are local-only and reject public tunnel requests bef
 
 ---
 
+## Custom API provider (OpenAI-compatible)
+
+Not an integration, but a third agent runtime alongside Claude and Codex: the **Custom API** runtime lets Boop run on any OpenAI-compatible chat completions endpoint — Ollama, LM Studio, OpenRouter, vLLM, or any hosted provider that speaks the OpenAI API. Boop calls the endpoint directly over HTTP with the `openai` SDK and drives the tool-calling loop on the server, so no CLI needs to be installed.
+
+Configuration, in order of precedence:
+
+1. **Settings UI** (desktop app or debug dashboard) — base URL, API key (stored in the Convex `settings` table and shown masked), and model.
+2. **Onboarding** — `npm run setup` prompts for the same three values when you pick the Custom API runtime.
+3. **Env vars** — `BOOP_CUSTOM_BASE_URL`, `BOOP_CUSTOM_API_KEY`, `BOOP_CUSTOM_MODEL` in `.env.local` as defaults.
+
+Limitations:
+
+- The endpoint must support **tool calling** (OpenAI-style `tools` / `tool_calls`); the agentic loop depends on it. Models without tool-calling support will fail or degrade to plain chat.
+- Boop has no price table for arbitrary models, so **estimated cost is 0** on the dashboard. Token usage is still recorded in `usageRecords` as usual.
+- All integrations above (Composio toolkits, local browser, Apple data) work the same regardless of runtime — they are exposed to the custom runtime through the same tool contracts.
+
+---
+
 ## Curated toolkit list
 
 The Connections tab shows a hand-picked set in `server/composio.ts:CURATED_TOOLKITS`. Edit that array to add or remove cards — the slugs must match Composio's toolkit slugs (see `docs.composio.dev/toolkits` for the full catalog).

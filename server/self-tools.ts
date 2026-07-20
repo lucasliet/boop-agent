@@ -16,6 +16,7 @@ import {
   KNOWN_MODELS,
   MODEL_ALIASES,
   RUNTIME_ALIASES,
+  getCustomApiConfig,
   getRuntimeConfig,
   getBrowserSettings,
   resolveModelInput,
@@ -45,6 +46,7 @@ export function createSelfTools(): RuntimeTool[] {
         const integrations = (await listEnabledIntegrations()).map((i) => i.name);
         const tzInfo = await describeUserNow();
         const runtime = await getRuntimeConfig();
+        const custom = await getCustomApiConfig();
         const browser = await getBrowserSettings();
         const config = {
           runtime: runtime.runtime,
@@ -55,6 +57,12 @@ export function createSelfTools(): RuntimeTool[] {
           codexEnvDefault: process.env.BOOP_CODEX_MODEL ?? "gpt-5.5",
           availableClaudeModels: [...KNOWN_MODELS],
           availableCodexModels: [...KNOWN_CODEX_MODELS],
+          custom: {
+            baseUrl: custom.baseUrl,
+            model: custom.model || null,
+            // The key itself is never exposed to the model.
+            apiKeyConfigured: Boolean(custom.apiKey),
+          },
           userTimezone: tzInfo.isExplicit ? tzInfo.timezone : null,
           timezoneFallback: tzInfo.isExplicit ? null : tzInfo.timezone,
           currentLocalTime: tzInfo.now,
@@ -111,8 +119,8 @@ Use when the user tells you their timezone or location ("I'm in Dallas", "use ce
       "set_runtime",
       `Switch Boop's provider/runtime for future turns. The change applies to the next top-level turn. Accepts aliases: ${Object.keys(RUNTIME_ALIASES)
         .map((k) => `"${k}"`)
-        .join(", ")}. Use "claude" for the Anthropic Claude Agent SDK provider and "codex" for the local Codex app-server provider backed by the user's ChatGPT/Codex subscription.`,
-      { runtime: z.string().describe('Runtime/provider to use, e.g. "claude" or "codex".') },
+        .join(", ")}. Use "claude" for the Anthropic Claude Agent SDK provider, "codex" for the local Codex app-server provider backed by the user's ChatGPT/Codex subscription, and "custom" for a user-configured OpenAI-compatible endpoint.`,
+      { runtime: z.string().describe('Runtime/provider to use, e.g. "claude", "codex" or "custom".') },
       async ({ runtime }) => {
         const resolved = resolveRuntimeInput(runtime);
         if (!resolved) {
@@ -137,7 +145,7 @@ Claude canonical: ${[...KNOWN_MODELS].map((k) => `"${k}"`).join(", ")}
 Codex aliases: ${Object.keys(CODEX_MODEL_ALIASES).map((k) => `"${k}"`).join(", ")}
 Codex canonical: ${[...KNOWN_CODEX_MODELS].map((k) => `"${k}"`).join(", ")}
 
-Use when the user says "use opus", "switch to sonnet", "use Codex mini", "make it faster", etc.`,
+Use when the user says "use opus", "switch to sonnet", "use Codex mini", "make it faster", etc. When the active runtime is "custom", any non-empty model id is accepted (the endpoint defines what's available).`,
       {
         model: z
           .string()
@@ -147,6 +155,12 @@ Use when the user says "use opus", "switch to sonnet", "use Codex mini", "make i
         const runtime = (await getRuntimeConfig()).runtime;
         const resolved = resolveModelInput(model, runtime);
         if (!resolved) {
+          if (runtime === "custom") {
+            return runtimeText(
+              `Invalid custom model "${model}". The custom runtime accepts any non-empty model id served by the configured endpoint.`,
+              false,
+            );
+          }
           const known = runtime === "codex" ? [...KNOWN_CODEX_MODELS] : [...KNOWN_MODELS];
           const aliases = runtime === "codex" ? CODEX_MODEL_ALIASES : MODEL_ALIASES;
           return runtimeText(

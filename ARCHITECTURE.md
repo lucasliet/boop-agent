@@ -181,6 +181,7 @@ HTTP routes (`server/browser-routes.ts`, mounted at `/browser`) are local-only. 
 Runtime shape:
 - Claude gets an MCP server named `browser`, so tool names are `mcp__browser__browser_open`, etc.
 - Codex gets dynamic runtime tools under `local_browser`, so it avoids the reserved Responses API browser namespace while keeping the user-facing integration name `browser`.
+- The Custom API runtime (any OpenAI-compatible endpoint) follows the Codex shape: dynamic runtime tools, with the tool-call loop driven by the server in `server/runtimes/custom-api.ts`.
 - The Patchright package is an optional dependency and the browser binary is installed only by explicit setup/UI opt-in.
 
 Security model:

@@ -10,11 +10,12 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = resolve(ROOT, ".env.local");
 const EXAMPLE_PATH = resolve(ROOT, ".env.example");
 
-type RuntimeChoice = "claude" | "codex";
+type RuntimeChoice = "claude" | "codex" | "custom";
 
 const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 const DEFAULT_CODEX_MODEL = "gpt-5.5";
 const DEFAULT_CODEX_REASONING_EFFORT = "medium";
+const DEFAULT_CUSTOM_BASE_URL = "http://localhost:11434/v1";
 
 interface CommandSpec {
   cmd: string;
@@ -42,7 +43,8 @@ const CODEX_REASONING_CHOICES = [
 ];
 
 function runtimeFromEnv(value: string | undefined): RuntimeChoice {
-  return value === "codex" ? "codex" : "claude";
+  if (value === "codex" || value === "custom") return value;
+  return "claude";
 }
 
 function initialForChoice<T extends readonly { value: string }[]>(
@@ -376,7 +378,8 @@ async function main() {
   console.log(`
 What this does:
   1. Configures your Telegram bot token
-  2. Asks whether Boop should use your Claude Code or Codex subscription
+  2. Asks whether Boop should use your Claude Code or Codex subscription,
+     or a custom OpenAI-compatible endpoint
   3. Optionally enables local browser use
   4. Runs \`npx convex dev\` to create a Convex project
   5. Writes .env.local
@@ -410,8 +413,15 @@ Before you start:
             value: "codex",
             description: "Uses local `codex app-server` auth from `codex login`.",
           },
+          {
+            title: "Custom API (OpenAI-compatible endpoint)",
+            value: "custom",
+            description:
+              "Any OpenAI-compatible HTTP endpoint — Ollama, LM Studio, vLLM, OpenRouter, …",
+          },
         ],
-        initial: runtimeDefault === "codex" ? 1 : 0,
+        initial:
+          runtimeDefault === "codex" ? 1 : runtimeDefault === "custom" ? 2 : 0,
       },
       {
         type: (_prev: unknown, values: Record<string, unknown>) =>
@@ -440,6 +450,29 @@ Before you start:
           existing.BOOP_CODEX_REASONING_EFFORT,
           1,
         ),
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "custom" ? "text" : null,
+        name: "BOOP_CUSTOM_BASE_URL",
+        message: "Base URL of the OpenAI-compatible endpoint:",
+        initial: existing.BOOP_CUSTOM_BASE_URL ?? DEFAULT_CUSTOM_BASE_URL,
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "custom" ? "text" : null,
+        name: "BOOP_CUSTOM_API_KEY",
+        message: "API key (optional — local endpoints usually accept any value):",
+        initial: existing.BOOP_CUSTOM_API_KEY ?? "",
+      },
+      {
+        type: (_prev: unknown, values: Record<string, unknown>) =>
+          values.BOOP_RUNTIME === "custom" ? "text" : null,
+        name: "BOOP_CUSTOM_MODEL",
+        message: "Model id the endpoint serves (e.g. llama3.1):",
+        initial: existing.BOOP_CUSTOM_MODEL ?? "",
+        validate: (value: string) =>
+          value.trim().length > 0 || "A model id is required for the custom runtime.",
       },
       {
         type: "text",
@@ -472,6 +505,14 @@ Before you start:
       answers.BOOP_CODEX_REASONING_EFFORT ??
       existing.BOOP_CODEX_REASONING_EFFORT ??
       DEFAULT_CODEX_REASONING_EFFORT,
+    BOOP_CUSTOM_BASE_URL:
+      answers.BOOP_CUSTOM_BASE_URL ??
+      existing.BOOP_CUSTOM_BASE_URL ??
+      DEFAULT_CUSTOM_BASE_URL,
+    BOOP_CUSTOM_API_KEY:
+      answers.BOOP_CUSTOM_API_KEY ?? existing.BOOP_CUSTOM_API_KEY ?? "",
+    BOOP_CUSTOM_MODEL:
+      answers.BOOP_CUSTOM_MODEL ?? existing.BOOP_CUSTOM_MODEL ?? "",
   });
 
   // ---- Composio API key ---------------------------------------------------
@@ -761,6 +802,35 @@ Boop reads the Codex credentials saved on disk. Set BOOP_CODEX_AUTH_HOME in
 auth.json.
 
 ${codexInstalled ? "✓ Codex CLI found on PATH." : "⚠ Codex CLI was not found on PATH. Install it before running `npm run dev`."}
+`);
+  } else if (env.BOOP_RUNTIME === "custom") {
+    banner("Custom endpoint check");
+    // Best-effort, non-blocking reachability probe — setup never fails on this.
+    const baseUrl = (env.BOOP_CUSTOM_BASE_URL ?? DEFAULT_CUSTOM_BASE_URL).replace(/\/$/, "");
+    const probeController = new AbortController();
+    const probeTimeout = setTimeout(() => probeController.abort(), 3000);
+    let probeStatus: string;
+    try {
+      const res = await fetch(`${baseUrl}/models`, {
+        headers: env.BOOP_CUSTOM_API_KEY
+          ? { Authorization: `Bearer ${env.BOOP_CUSTOM_API_KEY}` }
+          : {},
+        signal: probeController.signal,
+      });
+      probeStatus = res.ok
+        ? `✓ Endpoint responded at ${baseUrl}/models.`
+        : `⚠ Endpoint responded with HTTP ${res.status} at ${baseUrl}/models — check BOOP_CUSTOM_BASE_URL/BOOP_CUSTOM_API_KEY.`;
+    } catch {
+      probeStatus = `⚠ Could not reach ${baseUrl}/models. Start your server (Ollama, LM Studio, …) before running \`npm run dev\`.`;
+    } finally {
+      clearTimeout(probeTimeout);
+    }
+    console.log(`Boop will call your OpenAI-compatible endpoint directly over HTTP — no CLI to install.
+
+  • Base URL: ${baseUrl}
+  • Model:    ${env.BOOP_CUSTOM_MODEL || "(not set — BOOP_CUSTOM_MODEL is required)"}
+
+${probeStatus}
 `);
   } else {
     const claudeInstalled = await hasBinary("claude");

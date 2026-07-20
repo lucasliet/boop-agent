@@ -158,8 +158,10 @@ export async function spawnExecutionAgent(opts: SpawnExecutionAgentOpts): Promis
     runtimeConfig.runtime === "claude"
       ? await buildMcpServersForIntegrations(opts.integrations, opts.conversationId)
       : {};
+  // Non-claude runtimes (codex, custom) can't host in-process MCP servers,
+  // so integrations are exposed as dynamic runtime tools instead.
   const integrationTools =
-    runtimeConfig.runtime === "codex"
+    runtimeConfig.runtime !== "claude"
       ? await buildRuntimeToolsForIntegrations(opts.integrations, opts.conversationId)
       : [];
   const mcpServers = integrationServers;

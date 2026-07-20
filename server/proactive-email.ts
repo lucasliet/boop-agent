@@ -189,7 +189,12 @@ export async function classifyEmailImportance(
   const baseRuntimeConfig = options.runtimeConfig ?? (await getRuntimeConfig());
   const classifierModel =
     options.model ??
-    (baseRuntimeConfig.runtime === "claude" ? CLASSIFIER_MODEL : CODEX_CLASSIFIER_MODEL);
+    (baseRuntimeConfig.runtime === "claude"
+      ? CLASSIFIER_MODEL
+      : baseRuntimeConfig.runtime === "custom"
+        ? baseRuntimeConfig.model
+        : CODEX_CLASSIFIER_MODEL);
+  // Custom runtime uses its own model because the endpoint doesn't serve hardcoded Claude/Codex model names.
   const runtimeConfig = classifierModel
     ? { ...baseRuntimeConfig, model: classifierModel }
     : baseRuntimeConfig;

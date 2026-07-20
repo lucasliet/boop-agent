@@ -11,7 +11,7 @@ import {
 import { AppleSection } from "./AppleSection.js";
 import { BrowserSection } from "./BrowserSection.js";
 
-type RuntimeChoice = "claude" | "codex";
+type RuntimeChoice = "claude" | "codex" | "custom";
 type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 interface Option<T extends string = string> {
@@ -24,6 +24,10 @@ interface RuntimeConfigSnapshot {
   model: string;
   reasoningEffort?: ReasoningEffort;
   billingMode: "api" | "codex-subscription";
+  customBaseUrl: string;
+  customModel: string;
+  // The key itself is never returned — only whether one is stored.
+  customApiKeyConfigured: boolean;
 }
 
 interface ConnectionConfigSnapshot {
@@ -72,6 +76,7 @@ const DEMO_PHONE_NUMBER = "@boop_demo_bot";
 const RUNTIME_OPTIONS: Option<RuntimeChoice>[] = [
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
+  { value: "custom", label: "Custom API" },
 ];
 
 const CLAUDE_MODELS: Option[] = [
@@ -130,12 +135,19 @@ function settingDebug(key: string, value: string | null | undefined, fallback: s
   return `settings.${key} = "${value}"`;
 }
 
+// customApiKey is sent only when the user typed a new one — an empty/omitted
+// value never overwrites the stored key.
+type RuntimeConfigPatch = Partial<{
+  runtime: RuntimeChoice;
+  model: string;
+  reasoningEffort: ReasoningEffort;
+  customBaseUrl: string;
+  customApiKey: string;
+  customModel: string;
+}>;
+
 async function updateRuntimeConfig(
-  patch: Partial<{
-    runtime: RuntimeChoice;
-    model: string;
-    reasoningEffort: ReasoningEffort;
-  }>,
+  patch: RuntimeConfigPatch,
 ): Promise<RuntimeConfigSnapshot> {
   const res = await fetch("/api/runtime-config", {
     method: "POST",
@@ -368,7 +380,9 @@ function SettingsRuntimeBadge({ isDark }: { isDark: boolean }) {
 
   const runtime: RuntimeProvider | null =
     serverConfig?.runtime ??
-    (storedRuntime === "claude" || storedRuntime === "codex" ? storedRuntime : null);
+    (storedRuntime === "claude" || storedRuntime === "codex" || storedRuntime === "custom"
+      ? storedRuntime
+      : null);
 
   if (!runtime) return null;
 
@@ -571,6 +585,9 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
   );
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [customModel, setCustomModel] = useState("");
+  const [customApiKey, setCustomApiKey] = useState("");
 
   const refreshServerConfig = useCallback(async () => {
     const res = await fetch("/api/runtime-config", { cache: "no-store" });
@@ -610,9 +627,18 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
     };
   }, [refreshServerConfig, storedRuntime, storedClaudeModel, storedHostedModel, storedHostedEffort]);
 
+  // Keep the custom-endpoint drafts in sync with the server snapshot.
+  useEffect(() => {
+    if (!serverConfig) return;
+    setCustomBaseUrl(serverConfig.customBaseUrl ?? "");
+    setCustomModel(serverConfig.customModel ?? "");
+  }, [serverConfig]);
+
   const runtime: RuntimeChoice =
     serverConfig?.runtime ??
-    (storedRuntime === "claude" || storedRuntime === "codex" ? storedRuntime : "claude");
+    (storedRuntime === "claude" || storedRuntime === "codex" || storedRuntime === "custom"
+      ? storedRuntime
+      : "claude");
 
   const activeModelOptions = runtime === "codex" ? CODEX_MODELS : CLAUDE_MODELS;
   const modelKey = runtime === "codex" ? "codex_model" : "model";
@@ -633,11 +659,7 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
 
   async function savePatch(
     key: string,
-    patch: Partial<{
-      runtime: RuntimeChoice;
-      model: string;
-      reasoningEffort: ReasoningEffort;
-    }>,
+    patch: RuntimeConfigPatch,
   ) {
     setSaving(key);
     setError(null);
@@ -652,11 +674,37 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
     }
   }
 
+  async function saveCustomConfig() {
+    const patch: RuntimeConfigPatch = {
+      runtime: "custom",
+      customBaseUrl: customBaseUrl.trim(),
+      customModel: customModel.trim(),
+    };
+    if (customApiKey.trim()) {
+      patch.customApiKey = customApiKey;
+    }
+    await savePatch("custom:save", patch);
+    setCustomApiKey("");
+  }
+
+  const customDirty =
+    customBaseUrl !== (serverConfig?.customBaseUrl ?? "") ||
+    customModel !== (serverConfig?.customModel ?? "") ||
+    customApiKey.trim() !== "";
+
   const runtimeLoading = storedRuntime === undefined && serverConfig === null;
   const debugParts = [
     settingDebug("runtime", storedRuntime, serverConfig?.runtime ?? "claude"),
-    settingDebug(modelKey, storedModel, serverModelFallback),
   ];
+  if (runtime === "custom") {
+    debugParts.push(`custom.base_url = "${serverConfig?.customBaseUrl ?? ""}"`);
+    debugParts.push(`custom.model = "${serverConfig?.customModel ?? ""}"`);
+    debugParts.push(
+      `custom.api_key = ${serverConfig?.customApiKeyConfigured ? "configured" : "unset"}`,
+    );
+  } else {
+    debugParts.push(settingDebug(modelKey, storedModel, serverModelFallback));
+  }
   if (runtime === "codex") {
     debugParts.push(
       settingDebug(
@@ -687,7 +735,7 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
       control={
         <div className="flex w-full min-w-0 flex-col items-end gap-3 lg:min-w-[360px]">
           <div
-            className={`segmented-control grid w-full grid-cols-2 rounded-2xl border p-1 ${segmentBase}`}
+            className={`segmented-control grid w-full grid-cols-3 rounded-2xl border p-1 ${segmentBase}`}
             role="group"
             aria-label="AI provider"
           >
@@ -713,6 +761,91 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
             })}
           </div>
 
+          {runtime === "custom" ? (
+            <div className="flex w-full flex-col gap-2">
+              <label className="flex flex-col gap-1">
+                <span
+                  className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                    isDark ? "text-zinc-500" : "text-zinc-400"
+                  }`}
+                >
+                  Base URL
+                </span>
+                <input
+                  type="text"
+                  value={customBaseUrl}
+                  onChange={(e) => setCustomBaseUrl(e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                  disabled={saving !== null}
+                  className={`w-full rounded-xl border px-3 py-2 text-xs outline-none transition-colors focus:border-zinc-400 mono placeholder:text-zinc-500 ${inputBg}`}
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                <label className="flex flex-col gap-1">
+                  <span
+                    className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                      isDark ? "text-zinc-500" : "text-zinc-400"
+                    }`}
+                  >
+                    API Key
+                  </span>
+                  <input
+                    type="password"
+                    value={customApiKey}
+                    onChange={(e) => setCustomApiKey(e.target.value)}
+                    placeholder={serverConfig?.customApiKeyConfigured ? "••••••••" : "Paste API key"}
+                    disabled={saving !== null}
+                    autoComplete="off"
+                    className={`w-full rounded-xl border px-3 py-2 text-xs outline-none transition-colors focus:border-zinc-400 mono placeholder:text-zinc-500 ${inputBg}`}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span
+                    className={`text-[10px] font-medium uppercase tracking-[0.08em] ${
+                      isDark ? "text-zinc-500" : "text-zinc-400"
+                    }`}
+                  >
+                    Model
+                  </span>
+                  <input
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="e.g. qwen3:8b"
+                    disabled={saving !== null}
+                    className={`w-full rounded-xl border px-3 py-2 text-xs outline-none transition-colors focus:border-zinc-400 mono placeholder:text-zinc-500 ${inputBg}`}
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
+                  {serverConfig?.customApiKeyConfigured
+                    ? "Key stored — type a new one to replace it."
+                    : "OpenAI-compatible endpoint (Ollama, LM Studio, vLLM…)."}
+                </span>
+                <button
+                  type="button"
+                  onClick={saveCustomConfig}
+                  disabled={
+                    saving !== null ||
+                    !customDirty ||
+                    !customBaseUrl.trim() ||
+                    !customModel.trim()
+                  }
+                  className={`rounded-xl px-3 py-2 text-xs font-medium disabled:opacity-50 ${
+                    isDark
+                      ? "bg-zinc-100 text-zinc-950 hover:bg-white"
+                      : "bg-zinc-950 text-white hover:bg-zinc-800"
+                  }`}
+                >
+                  {saving === "custom:save" ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
             <label className="flex flex-col gap-1">
               <span
@@ -772,6 +905,7 @@ function RuntimeRow({ isDark }: { isDark: boolean }) {
               </select>
             </label>
           </div>
+          )}
 
           {error && <div className="text-[11px] text-rose-400">{error}</div>}
         </div>

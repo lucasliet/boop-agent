@@ -7,7 +7,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const DEMO_EMBEDDING_DIMENSIONS = 1024;
 
-type Runtime = "claude" | "codex";
+type Runtime = "claude" | "codex" | "custom";
 type BillingMode = "api" | "codex-subscription";
 type AgentStatus = "spawned" | "running" | "completed" | "failed" | "cancelled";
 type AutomationRunStatus = "running" | "completed" | "failed";

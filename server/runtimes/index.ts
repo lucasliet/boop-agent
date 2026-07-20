@@ -2,6 +2,7 @@ import type { RuntimeConfig } from "../runtime-config.js";
 import type { RuntimeRunRequest, RuntimeRunResult } from "./types.js";
 import { runClaudeAgent } from "./claude.js";
 import { runCodexAppServerAgent } from "./codex-app-server.js";
+import { runCustomApiAgent } from "./custom-api.js";
 
 export async function runAgentRuntime(
   config: RuntimeConfig,
@@ -17,5 +18,10 @@ export async function runAgentRuntime(
       return runClaudeAgent(fullRequest);
     case "codex":
       return runCodexAppServerAgent(fullRequest);
+    case "custom":
+      return runCustomApiAgent(fullRequest, {
+        baseUrl: config.customBaseUrl,
+        apiKey: config.customApiKey,
+      });
   }
 }

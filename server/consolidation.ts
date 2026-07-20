@@ -206,7 +206,10 @@ export async function runConsolidation(trigger = "scheduled"): Promise<{
     const adversaryModel =
       runtimeConfig.runtime === "claude"
         ? ADVERSARY_MODEL
-        : CODEX_ADVERSARY_MODEL ?? runtimeConfig.model;
+        : runtimeConfig.runtime === "custom"
+          ? runtimeConfig.model
+          : CODEX_ADVERSARY_MODEL ?? runtimeConfig.model;
+    // Custom runtime uses its own model because the endpoint doesn't serve hardcoded Claude/Codex model names.
 
     const payload = memories
       .map((m) => {

@@ -73,7 +73,13 @@ function plainPreview(value?: string | null, length = 160): string {
 }
 
 function isEstimatedCost(agent: { runtime?: string; billingMode?: string }): boolean {
-  return agent.runtime === "codex" || agent.billingMode === "codex-subscription";
+  // Codex costs come from subscription tokens at API prices; custom-endpoint
+  // costs come from the generic OpenAI price table (0 for unknown models).
+  return (
+    agent.runtime === "codex" ||
+    agent.runtime === "custom" ||
+    agent.billingMode === "codex-subscription"
+  );
 }
 
 function isAppleServer(name: string): boolean {
@@ -658,7 +664,7 @@ export function AgentsPanel({ isDark }: { isDark: boolean }) {
                     {agent.costUsd > 0 && (
                       <span
                         className="text-emerald-500 font-semibold"
-                        title={estimatedCost ? "API-equivalent estimate from Codex runtime tokens" : undefined}
+                        title={estimatedCost ? "API-equivalent estimate from token counts" : undefined}
                       >
                         {formatCostUsd(agent.costUsd, estimatedCost)}
                       </span>
@@ -758,7 +764,7 @@ function AgentDetail({
           {agent.costUsd > 0 && (
             <span
               className="text-emerald-500 font-semibold"
-              title={estimatedCost ? "API-equivalent estimate from Codex runtime tokens" : undefined}
+              title={estimatedCost ? "API-equivalent estimate from token counts" : undefined}
             >
               {formatCostUsd(agent.costUsd, estimatedCost)}
             </span>

@@ -21,11 +21,13 @@ import { createAppleRouter } from "./apple-routes.js";
 import { closeLocalBrowser } from "./browser/launcher.js";
 import { createChangelogRouter } from "./changelog.js";
 import {
+  getCustomApiConfig,
   getRuntimeConfig,
   resolveModelInput,
   resolveReasoningEffortInput,
   resolveRuntimeInput,
   setCodexReasoningEffort,
+  setCustomApiConfig,
   setRuntimeModel,
   setRuntimeProvider,
 } from "./runtime-config.js";
@@ -77,9 +79,25 @@ async function main() {
 
   app.use("/telegram", createTelegramRouter());
 
+  // Snapshot returned by the /runtime-config routes. The custom API key is
+  // never exposed — only whether one is configured.
+  async function runtimeConfigSnapshot() {
+    const config = await getRuntimeConfig();
+    const custom = await getCustomApiConfig();
+    return {
+      runtime: config.runtime,
+      model: config.model,
+      reasoningEffort: config.reasoningEffort ?? null,
+      billingMode: config.billingMode,
+      customBaseUrl: custom.baseUrl,
+      customModel: custom.model || null,
+      customApiKeyConfigured: Boolean(custom.apiKey),
+    };
+  }
+
   app.get("/runtime-config", async (_req, res) => {
     try {
-      res.json(await getRuntimeConfig());
+      res.json(await runtimeConfigSnapshot());
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -91,6 +109,9 @@ async function main() {
         runtime?: unknown;
         model?: unknown;
         reasoningEffort?: unknown;
+        customBaseUrl?: unknown;
+        customApiKey?: unknown;
+        customModel?: unknown;
       };
       let runtime =
         body.runtime === undefined
@@ -129,7 +150,23 @@ async function main() {
         await setCodexReasoningEffort(effort);
       }
 
-      res.json(await getRuntimeConfig());
+      // The UI only sends customApiKey when it changed, so an empty/missing
+      // key must not overwrite the stored one.
+      const customUpdate: { baseUrl?: string; apiKey?: string; model?: string } = {};
+      if (typeof body.customBaseUrl === "string" && body.customBaseUrl.trim()) {
+        customUpdate.baseUrl = body.customBaseUrl.trim();
+      }
+      if (typeof body.customApiKey === "string" && body.customApiKey.trim()) {
+        customUpdate.apiKey = body.customApiKey.trim();
+      }
+      if (typeof body.customModel === "string" && body.customModel.trim()) {
+        customUpdate.model = body.customModel.trim();
+      }
+      if (Object.keys(customUpdate).length > 0) {
+        await setCustomApiConfig(customUpdate);
+      }
+
+      res.json(await runtimeConfigSnapshot());
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

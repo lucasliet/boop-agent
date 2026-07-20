@@ -21,6 +21,12 @@ describe("direct runtime switching", () => {
     expect(resolveDirectRuntimeSwitch("use claude agent sdk")).toBe("claude");
   });
 
+  it("detects explicit Custom API switch requests", () => {
+    expect(resolveDirectRuntimeSwitch("switch to custom")).toBe("custom");
+    expect(resolveDirectRuntimeSwitch("use custom api")).toBe("custom");
+    expect(resolveDirectRuntimeSwitch("please switch to openai")).toBe("custom");
+  });
+
   it("ignores non-switch mentions", () => {
     expect(resolveDirectRuntimeSwitch("what model are you using")).toBeNull();
     expect(resolveDirectRuntimeSwitch("what is Codex?")).toBeNull();

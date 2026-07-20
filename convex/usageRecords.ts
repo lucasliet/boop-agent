@@ -18,7 +18,7 @@ export const record = mutation({
     turnId: v.optional(v.string()),
     agentId: v.optional(v.string()),
     runId: v.optional(v.string()),
-    runtime: v.optional(v.union(v.literal("claude"), v.literal("codex"))),
+    runtime: v.optional(v.union(v.literal("claude"), v.literal("codex"), v.literal("custom"))),
     billingMode: v.optional(v.union(v.literal("api"), v.literal("codex-subscription"))),
     model: v.string(),
     inputTokens: v.number(),
