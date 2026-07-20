@@ -91,7 +91,7 @@ describe("local server access", () => {
   it("exposes only health and provider webhooks publicly", () => {
     expect(isPublicServerRequest(request({ url: "/health?source=desktop" }))).toBe(true);
     expect(
-      isPublicServerRequest(request({ method: "POST", url: "/sendblue/webhook/" })),
+      isPublicServerRequest(request({ method: "POST", url: "/telegram/webhook/" })),
     ).toBe(true);
     expect(
       isPublicServerRequest(request({ method: "POST", url: "/composio/webhook" })),
@@ -99,7 +99,7 @@ describe("local server access", () => {
     expect(isPublicServerRequest(request({ method: "POST", url: "/chat" }))).toBe(false);
     expect(isPublicServerRequest(request({ url: "/runtime-config" }))).toBe(false);
     expect(isPublicServerRequest(request({ url: "/composio/toolkits" }))).toBe(false);
-    expect(isPublicServerRequest(request({ method: "GET", url: "/sendblue/webhook" }))).toBe(
+    expect(isPublicServerRequest(request({ method: "GET", url: "/telegram/webhook" }))).toBe(
       false,
     );
   });

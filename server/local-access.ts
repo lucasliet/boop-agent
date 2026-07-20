@@ -127,7 +127,7 @@ export function isPublicServerRequest(request: RequestLike): boolean {
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
   return (
     (request.method === "GET" && normalizedPath === "/health") ||
-    (request.method === "POST" && normalizedPath === "/sendblue/webhook") ||
+    (request.method === "POST" && normalizedPath === "/telegram/webhook") ||
     (request.method === "POST" && normalizedPath === "/composio/webhook")
   );
 }

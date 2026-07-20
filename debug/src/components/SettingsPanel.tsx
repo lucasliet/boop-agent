@@ -54,7 +54,7 @@ const SETTINGS: Setting[] = [
     key: "proactive_enabled",
     label: "Proactive email surfacing",
     description:
-      "Watch new Gmail messages. When something important arrives, you'll get an iMessage. Turn off to silence the watcher entirely without disconnecting Gmail.",
+      "Watch new Gmail messages. When something important arrives, you'll get a Telegram message. Turn off to silence the watcher entirely without disconnecting Gmail.",
     defaultEnabled: true,
   },
   {
@@ -62,12 +62,12 @@ const SETTINGS: Setting[] = [
     key: "user_timezone",
     label: "Your timezone",
     description:
-      "Used for deadline checks, 'today', and any time-of-day reasoning. The agent can also update this via iMessage when you tell it your timezone.",
+      "Used for deadline checks, 'today', and any time-of-day reasoning. The agent can also update this via Telegram when you tell it your timezone.",
   },
 ];
 
 const RUNTIME_SETTING_COUNT = SETTINGS.length + 5;
-const DEMO_PHONE_NUMBER = "+11111111111";
+const DEMO_PHONE_NUMBER = "@boop_demo_bot";
 
 const RUNTIME_OPTIONS: Option<RuntimeChoice>[] = [
   { value: "claude", label: "Claude" },
@@ -244,10 +244,10 @@ function TextBoopRow({
   const phoneNumber = demoModeEnabled ? DEMO_PHONE_NUMBER : realPhoneNumber;
   const configured = Boolean(phoneNumber);
   const debugLine = demoModeEnabled
-    ? "sendblue.from_number = demo placeholder"
+    ? "telegram.bot_username = demo placeholder"
     : configured
-      ? `sendblue.from_number = "${phoneNumber}"`
-      : "sendblue.from_number = (not configured)";
+      ? `telegram.bot_username = "${phoneNumber}"`
+      : "telegram.bot_username = (not configured)";
 
   async function copyNumber() {
     if (!phoneNumber) return;
@@ -284,8 +284,8 @@ function TextBoopRow({
       label="Text Boop"
       description={
         demoModeEnabled
-          ? "Demo mode is hiding the real Sendblue number and showing a placeholder instead."
-          : "Text or iMessage this Sendblue number to talk to Boop. Message it from a different phone; it is the number people text TO, not your personal cell."
+          ? "Demo mode is hiding the real Telegram bot username and showing a placeholder instead."
+          : "Message this bot on Telegram to talk to Boop. This is the bot you created with @BotFather — chat with it from your own Telegram account."
       }
       debugLine={debugLine}
       isDark={isDark}
@@ -298,7 +298,7 @@ function TextBoopRow({
               <HugeiconsIcon icon={Message01Icon} size={16} className="shrink-0" />
               <div className="min-w-0">
                 <div className="text-[11px] font-medium opacity-75">
-                  Text / iMessage this number
+                  Message this bot on Telegram
                 </div>
                 <div className="truncate mono text-sm font-semibold">
                   {configured ? phoneNumber : "Not configured"}
@@ -310,7 +310,7 @@ function TextBoopRow({
               onClick={copyNumber}
               disabled={!configured}
               className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border disabled:opacity-45 ${copyButtonTone}`}
-              aria-label="Copy number to iMessage"
+              aria-label="Copy bot username"
               title={copied ? "Copied" : "Copy number"}
             >
               <HugeiconsIcon icon={Copy01Icon} size={16} />
@@ -321,11 +321,11 @@ function TextBoopRow({
               ? demoModeEnabled
                 ? copied
                   ? "Copied demo placeholder."
-                  : "Demo mode is hiding the real number."
+                  : "Demo mode is hiding the real bot username."
                 : copied
                   ? "Copied."
-                  : "Use this as the recipient in Messages."
-              : "Run setup again or sync Sendblue to configure the receiving number."}
+                  : "Search this username in Telegram and send it a message."
+              : "Run setup again or set TELEGRAM_BOT_USERNAME in .env.local to show your bot here."}
           </div>
         </div>
       }
@@ -866,7 +866,7 @@ function TimezoneRow({
   const stored = !loading && value !== null ? value : null;
 
   // Keep the input in sync when the stored value changes (e.g. agent updates
-  // it from iMessage while the panel is open).
+  // it from Telegram while the panel is open).
   useEffect(() => {
     if (!loading) setDraft(stored ?? "");
   }, [loading, stored]);

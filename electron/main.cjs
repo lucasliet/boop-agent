@@ -275,12 +275,31 @@ function readRuntimeEnv() {
   return env;
 }
 
+let telegramBotUsername = "";
+
 function readConnectionStatus() {
   const env = readRuntimeEnv();
   return {
     convexUrl: env.CONVEX_URL || env.VITE_CONVEX_URL || "",
-    phoneNumber: env.SENDBLUE_FROM_NUMBER || "",
+    phoneNumber: telegramBotUsername,
   };
+}
+
+// Fills in the Telegram bot's @username (shown as "Text Boop" in the status
+// UI) once the Bot API answers. Non-fatal on failure.
+async function refreshBotIdentity() {
+  const env = readRuntimeEnv();
+  if (!env.BOT_TOKEN) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+    const data = await res.json();
+    if (data.ok && data.result && data.result.username) {
+      telegramBotUsername = `@${data.result.username}`;
+      setStatus({});
+    }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 function refreshConnectionStatus() {
@@ -314,7 +333,7 @@ function setStatus(partial) {
 function webhookUrlFromPublicUrl(publicUrl) {
   const trimmed = (publicUrl || "").replace(/\/$/, "");
   if (!trimmed) return "";
-  return trimmed.endsWith("/sendblue/webhook") ? trimmed : `${trimmed}/sendblue/webhook`;
+  return trimmed.endsWith("/telegram/webhook") ? trimmed : `${trimmed}/telegram/webhook`;
 }
 
 function applyWebhookCheck(result) {
@@ -333,69 +352,50 @@ function runWebhookCheck(expectedUrl, sequence = ++webhookCheckSequence) {
       webhook: "no-tunnel",
       expectedWebhookUrl: "",
       registeredWebhookUrl: "",
-      webhookDetails: "No active public URL is available for Sendblue.",
+      webhookDetails: "No active public URL is available for Telegram.",
       webhookCheckedAt: new Date().toISOString(),
     });
     return Promise.resolve(status);
   }
 
-  return new Promise((resolve) => {
-    const script = path.join(runtimeRoot, "scripts", "sendblue-webhook.mjs");
-    const child = spawn("node", [script, "--check", "--json", expectedUrl], {
-      cwd: runtimeRoot,
-      env: childEnv(),
-      stdio: ["ignore", "pipe", "pipe"],
+  const fail = (details) => {
+    if (sequence !== webhookCheckSequence) return status;
+    setStatus({
+      webhook: "error",
+      expectedWebhookUrl: expectedUrl,
+      registeredWebhookUrl: "",
+      webhookDetails: details,
+      webhookCheckedAt: new Date().toISOString(),
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", (error) => {
-      if (sequence !== webhookCheckSequence) return resolve(status);
-      setStatus({
-        webhook: "error",
+    return status;
+  };
+
+  const env = readRuntimeEnv();
+  if (!env.BOT_TOKEN) {
+    return Promise.resolve(fail("BOT_TOKEN is not set in .env.local."));
+  }
+
+  return fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getWebhookInfo`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (sequence !== webhookCheckSequence) return status;
+      if (!data.ok) return fail(`Telegram API error: ${JSON.stringify(data)}`);
+      const registered = (data.result && data.result.url) || "";
+      applyWebhookCheck({
+        state: registered === expectedUrl ? "registered" : "mismatch",
         expectedWebhookUrl: expectedUrl,
-        registeredWebhookUrl: "",
-        webhookDetails: error.message,
-        webhookCheckedAt: new Date().toISOString(),
+        registeredWebhookUrl: registered,
+        details:
+          registered === expectedUrl
+            ? "Telegram webhook points at the active tunnel."
+            : registered
+              ? "Registered webhook URL does not match the active tunnel."
+              : "No webhook registered with Telegram for this bot.",
+        checkedAt: new Date().toISOString(),
       });
-      resolve(status);
-    });
-    child.on("exit", () => {
-      if (sequence !== webhookCheckSequence) return resolve(status);
-      const jsonLine = stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .reverse()
-        .find((line) => line.startsWith("{") && line.endsWith("}"));
-      if (!jsonLine) {
-        setStatus({
-          webhook: "error",
-          expectedWebhookUrl: expectedUrl,
-          registeredWebhookUrl: "",
-          webhookDetails: stderr.trim() || stdout.trim() || "Sendblue webhook check did not return JSON.",
-          webhookCheckedAt: new Date().toISOString(),
-        });
-        return resolve(status);
-      }
-      try {
-        applyWebhookCheck(JSON.parse(jsonLine));
-      } catch (error) {
-        setStatus({
-          webhook: "error",
-          expectedWebhookUrl: expectedUrl,
-          registeredWebhookUrl: "",
-          webhookDetails: error instanceof Error ? error.message : String(error),
-          webhookCheckedAt: new Date().toISOString(),
-        });
-      }
-      resolve(status);
-    });
-  });
+      return status;
+    })
+    .catch((error) => fail(error instanceof Error ? error.message : String(error)));
 }
 
 function scheduleWebhookCheck(publicUrl, delayMs = 1000) {
@@ -407,22 +407,22 @@ function scheduleWebhookCheck(publicUrl, delayMs = 1000) {
     webhook: "checking",
     expectedWebhookUrl: expectedUrl,
     registeredWebhookUrl: "",
-    webhookDetails: "Checking Sendblue registration against the active tunnel.",
+    webhookDetails: "Checking Telegram registration against the active tunnel.",
   });
   webhookCheckTimer = setTimeout(() => {
     runWebhookCheck(expectedUrl, sequence).catch(() => undefined);
   }, delayMs);
 }
 
-function checkSendblueWebhook() {
+function checkTelegramWebhook() {
   const expectedUrl = status.expectedWebhookUrl || webhookUrlFromPublicUrl(status.publicUrl);
   setStatus({
     webhook: expectedUrl ? "checking" : "no-tunnel",
     expectedWebhookUrl: expectedUrl,
     registeredWebhookUrl: "",
     webhookDetails: expectedUrl
-      ? "Checking Sendblue registration against the active tunnel."
-      : "No active public URL is available for Sendblue.",
+      ? "Checking Telegram registration against the active tunnel."
+      : "No active public URL is available for Telegram.",
   });
   return runWebhookCheck(expectedUrl);
 }
@@ -514,7 +514,7 @@ function statusMenuTemplate() {
     { label: `Convex: ${plainStatus(status.convex)}`, enabled: false },
     { label: `Dashboard: ${plainStatus(status.dashboard)}`, enabled: false },
     { label: `Tunnel: ${plainStatus(status.tunnel)}`, enabled: false },
-    { label: `Sendblue Webhook: ${plainStatus(status.webhook)}`, enabled: false },
+    { label: `Telegram Webhook: ${plainStatus(status.webhook)}`, enabled: false },
     { type: "separator" },
     {
       label: "Open Dashboard",
@@ -523,9 +523,9 @@ function statusMenuTemplate() {
     },
     { label: "Show Boop", click: loadStatusPage },
     {
-      label: "Check Sendblue Webhook",
+      label: "Check Telegram Webhook",
       enabled: Boolean(status.expectedWebhookUrl || status.publicUrl),
-      click: checkSendblueWebhook,
+      click: checkTelegramWebhook,
     },
     { label: "Start Boop", enabled: !boopProcess && !starting, click: startBoop },
     { label: "Restart Boop", enabled: !starting, click: restartBoop },
@@ -612,7 +612,7 @@ function ingestLine(line) {
     next.webhook = "checking";
     next.expectedWebhookUrl = webhookUrlFromPublicUrl(publicUrl);
     next.registeredWebhookUrl = "";
-    next.webhookDetails = "Checking Sendblue registration against the active tunnel.";
+    next.webhookDetails = "Checking Telegram registration against the active tunnel.";
     checkWebhookForPublicUrl = publicUrl;
   }
 
@@ -621,7 +621,7 @@ function ingestLine(line) {
     next.webhook = "no-tunnel";
     next.expectedWebhookUrl = "";
     next.registeredWebhookUrl = "";
-    next.webhookDetails = "No public tunnel is running, so Sendblue cannot reach this app.";
+    next.webhookDetails = "No public tunnel is running, so Telegram cannot reach this app.";
   }
   if (/Convex types haven't been generated/.test(plain)) next.state = "setup-required";
   if (/A child process exited with code|fatal /.test(plain)) next.state = "error";
@@ -810,7 +810,7 @@ ipcMain.handle("boop:restart", () => {
   return status;
 });
 ipcMain.handle("boop:check-webhook", async () => {
-  await checkSendblueWebhook();
+  await checkTelegramWebhook();
   return status;
 });
 ipcMain.handle("boop:open-dashboard", () => {
@@ -827,6 +827,7 @@ app.whenReady().then(() => {
 
   createWindow();
   startBoop();
+  refreshBotIdentity().catch(() => undefined);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -13,7 +13,6 @@ const TARGETS: Array<{ table: string; fn: any; olderThanMs: number }> = [
   { table: "articles",          fn: api.articles.purgeOlderThan,               olderThanMs:  30 * DAY },
   { table: "consolidationRuns", fn: api.consolidation.purgeRunsOlderThan,      olderThanMs:  30 * DAY },
   { table: "drafts",            fn: api.drafts.purgeOlderThan,                 olderThanMs:   7 * DAY },
-  { table: "sendblueDedup",     fn: api.sendblueDedup.purgeOlderThan,          olderThanMs:   7 * DAY },
   { table: "memoryRecords",     fn: api.memoryRecords.purgeInactiveOlderThan,  olderThanMs:  30 * DAY },
 ];
 

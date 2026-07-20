@@ -73,14 +73,14 @@ async function demoModeEnabled(): Promise<boolean> {
 }
 
 type ScriptedDemoReplyDeps = {
-  sendImessage: (toNumber: string, text: string) => Promise<void>;
-  sendTypingIndicator: (toNumber: string) => Promise<void>;
+  sendMessage: (chatId: number, text: string) => Promise<void>;
+  sendTypingIndicator: (chatId: number) => Promise<void>;
 };
 
 type ScriptedDemoReplyOpts = {
   conversationId: string;
   content: string;
-  fromNumber: string;
+  chatId: number;
   turnTag: string;
 };
 
@@ -113,7 +113,7 @@ export async function maybeHandleScriptedDemoReply(
   const sendStep = async (content: string): Promise<void> => {
     const text = redactPhoneNumbers(content.trim());
     if (!text) return;
-    await deps.sendImessage(opts.fromNumber, text);
+    await deps.sendMessage(opts.chatId, text);
     await convex.mutation(api.messages.send, {
       conversationId: opts.conversationId,
       role: "assistant",
@@ -129,22 +129,22 @@ export async function maybeHandleScriptedDemoReply(
 
   if (demo === "water-bottle") {
     log("matched water bottle demo prompt");
-    await deps.sendTypingIndicator(opts.fromNumber);
+    await deps.sendTypingIndicator(opts.chatId);
     await wait(150);
-    await sendStep("Searching iMessage for the thread from your mom...");
+    await sendStep("Searching your messages for the thread from your mom...");
 
-    await deps.sendTypingIndicator(opts.fromNumber);
+    await deps.sendTypingIndicator(opts.chatId);
     await wait(1800);
     await sendStep("It was the LARQ bottle.");
     return true;
   }
 
   log("matched LinkedIn browser demo prompt");
-  await deps.sendTypingIndicator(opts.fromNumber);
+  await deps.sendTypingIndicator(opts.chatId);
   await wait(250);
   await sendStep("I'll go check it.");
 
-  await deps.sendTypingIndicator(opts.fromNumber);
+  await deps.sendTypingIndicator(opts.chatId);
   try {
     await Promise.all([
       openLinkedInLoginForDemo(),

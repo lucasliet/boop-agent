@@ -1,6 +1,6 @@
 // Auto-register the Composio webhook subscription + per-Gmail-account
 // trigger instances with the current public URL. Invoked from
-// `scripts/dev.mjs` once an ngrok tunnel is up. Mirrors the Sendblue
+// `scripts/dev.mjs` once an ngrok tunnel is up. Mirrors the Telegram
 // auto-register flow so the user doesn't have to touch the Composio
 // dashboard on every restart.
 //

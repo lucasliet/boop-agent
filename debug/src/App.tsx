@@ -456,7 +456,7 @@ function ConnectionHeader({
         { label: "Convex", value: desktopStatus.convex },
         { label: "Dashboard", value: desktopStatus.dashboard },
         { label: "Tunnel", value: desktopStatus.tunnel },
-        { label: "Sendblue webhook", value: desktopStatus.webhook ?? "unknown" },
+        { label: "Telegram webhook", value: desktopStatus.webhook ?? "unknown" },
       ]
     : [{ label: "Dashboard socket", value: connected ? "running" : "stopped" }];
   const starting = desktopStatus ? isDesktopStarting(desktopStatus) : false;
@@ -580,7 +580,7 @@ function ConnectionHeader({
                 isDark={isDark}
               />
               <ConnectionDetail
-                label="Sendblue has"
+                label="Telegram has"
                 value={desktopStatus.registeredWebhookUrl}
                 isDark={isDark}
               />

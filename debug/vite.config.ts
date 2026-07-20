@@ -6,7 +6,7 @@ import { isTrustedLocalRequest } from "../server/local-access.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
-function localConnectionConfig(phoneNumber: string): Plugin {
+function localConnectionConfig(botUsername: string): Plugin {
   return {
     name: "boop-local-connection-config",
     configureServer(server) {
@@ -25,7 +25,7 @@ function localConnectionConfig(phoneNumber: string): Plugin {
         res.setHeader("Content-Type", "application/json");
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("X-Content-Type-Options", "nosniff");
-        res.end(JSON.stringify({ phoneNumber }));
+        res.end(JSON.stringify({ phoneNumber: botUsername }));
       });
     },
   };
@@ -41,7 +41,11 @@ export default defineConfig(({ mode }) => {
     root: path.resolve(__dirname),
     envDir: PROJECT_ROOT,
     plugins: [
-      localConnectionConfig(env.SENDBLUE_FROM_NUMBER ?? ""),
+      localConnectionConfig(
+        env.TELEGRAM_BOT_USERNAME
+          ? `@${env.TELEGRAM_BOT_USERNAME.replace(/^@/, "")}`
+          : "",
+      ),
       react(),
       tailwindcss(),
     ],

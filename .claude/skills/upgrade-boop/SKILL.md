@@ -42,7 +42,25 @@ Run `/upgrade-boop` inside the repo from `claude`. This is the supported upgrade
 - Prefer git-native operations. Do not rewrite files manually except to resolve conflict markers.
 - Default to MERGE (one-pass conflict resolution). Offer REBASE only if the user explicitly asks.
 - Keep token usage low: use `git status`, `git log`, `git diff`, and only open files that actually have conflicts.
-- This fork uses **Telegram, not Sendblue/iMessage**, as its messaging channel (see CLAUDE.md). NEVER reintroduce Sendblue/iMessage wiring during an upgrade — drop upstream's sendblue routes, webhooks, env vars, scripts entries, and setup prompts in conflict resolution, and port any underlying improvement to the Telegram path instead. The local Apple-data *reader* for iMessage (`server/apple/`) is unrelated and may be kept.
+
+---
+
+# Messaging channel: Telegram only (never Sendblue/iMessage)
+
+This fork replaced the Sendblue/iMessage channel with Telegram (grammy) in commit `d4436d2`. This is a permanent decision and overrides anything upstream does with the Sendblue/iMessage channel.
+
+- The user-facing channel is **Telegram** — `server/telegram.ts`, `scripts/telegram-webhook.mjs`, `BOT_TOKEN` / `TELEGRAM_*` env vars, `tg:<userId>` conversation IDs.
+- **Never reintroduce Sendblue/iMessage** as a messaging channel — no routes, webhooks, env vars, `package.json` script entries, setup prompts, or docs. The old residue (`server/sendblue.ts`, `scripts/sendblue-*.mjs`, `test/sendblue-*.test.ts`, the `sendblueDedup` table) was deleted after the 2026-07 merge; never revive it.
+- **Port, don't just drop.** When an upstream commit builds a NEW feature on top of the Sendblue channel, the feature still comes in — rewired to Telegram. Dropping the wiring is only half the job. For every upstream sendblue touchpoint, ask "what feature is this?" and port it:
+  - message delivery (`sendImessage` → `sendTelegramMessage`, `sms:<phone>` → `tg:<userId>` conversation IDs)
+  - webhook registration/checks (`scripts/sendblue-webhook.mjs` → `scripts/telegram-webhook.mjs`, Telegram Bot API `getWebhookInfo`)
+  - desktop app status/menus (`electron/main.cjs` → Telegram webhook check, bot @username instead of phone number)
+  - debug UI labels and config cards (phone-number card → Telegram bot card)
+  - runtime/system prompts ("iMessage agent" → "Telegram agent", delivery hints)
+  - env vars (`SENDBLUE_*` → `BOT_TOKEN` / `TELEGRAM_*`)
+  - Reference ports from the 2026-07 merge: proactive email dispatch (`server/proactive-email.ts`), scripted demo replies (`server/scripted-demo-replies.ts` wired into the Telegram inbound path), Electron webhook check via Bot API, debug Settings panel bot card.
+- After resolving conflicts, sweep the whole tree (`grep -ri sendblue`) — merged non-conflicted hunks sneak sendblue references into files that never showed up as conflicts.
+- Exception: the upstream "Apple data" integration that *reads* iMessage texts locally from the Mac (`server/apple/`, the "iMessage" integration card in the debug UI) is a data source, not the messaging channel — keep it.
 
 ---
 

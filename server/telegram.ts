@@ -3,6 +3,7 @@ import { Bot } from "grammy";
 import { api } from "../convex/_generated/api.js";
 import { convex } from "./convex-client.js";
 import { handleUserMessage } from "./interaction-agent.js";
+import { maybeHandleScriptedDemoReply } from "./scripted-demo-replies.js";
 import { broadcast } from "./broadcast.js";
 
 const MAX_CHUNK = 4096;
@@ -59,7 +60,7 @@ export async function sendTelegramMessage(chatId: number, text: string): Promise
   }
 }
 
-async function sendTypingAction(chatId: number): Promise<void> {
+export async function sendTypingAction(chatId: number): Promise<void> {
   const bot = getBot();
   if (!bot) return;
   try {
@@ -127,6 +128,16 @@ export function createTelegramRouter(): express.Router {
 
     broadcast("message_in", { conversationId, content, userId, chatId });
     res.json({ ok: true });
+
+    try {
+      const handledByDemo = await maybeHandleScriptedDemoReply(
+        { conversationId, content, chatId, turnTag },
+        { sendMessage: sendTelegramMessage, sendTypingIndicator: sendTypingAction },
+      );
+      if (handledByDemo) return;
+    } catch (err) {
+      console.error(`[turn ${turnTag}] demo script error`, err);
+    }
 
     const stopTyping = startTypingLoop(chatId);
     try {
